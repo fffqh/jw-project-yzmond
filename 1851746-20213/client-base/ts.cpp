@@ -18,6 +18,8 @@
 #include <sys/wait.h> //waitpid
 #include <sys/fcntl.h>
 
+#include "../include/my_encrpty.h"
+
 //常量设置
 #define MAX_RECON_TIME  5
 #define MAX_CON_WATIME  25
@@ -42,23 +44,25 @@ typedef struct{
 
 }SOCK_INFO;
 
-typedef struct{
-    const int         no;
-    const int        bno; //0表示无需回复
+struct CLTPACK;
+struct SEVPACK;
+
+struct SEVPACK{
+    const int       no;
+    const int       bno; //0表示无需回复
+    bool (*unpack_fun)(SOCK_INFO*, SEVPACK*, CLTPACK*, u_short); //解包函数
     const u_short   head;
     const char      *str;
-    u_short         size;
-    u_short         len;
     int             status;
-} SEVPACK;
+};
 
-typedef struct{
+struct CLTPACK{
     const int       no;
     const int       bno;
     const u_short   head;
     const char      *str;
     int             status;
-} CLTPACK;
+};
 
 //配置参数
 char _conf_ip[16] = "192.168.1.242";
@@ -75,7 +79,7 @@ int  _conf_dprint = 1;
 int  _devid;
 int  _devnum;
 
-/* 参数与配置 */
+/** 参数与配置 **/
 //chk_arg: 检查调用参数
 bool chk_arg(int argc, char** argv)
 {
@@ -95,7 +99,7 @@ bool read_conf()
     return true;
 }
 
-/* 父进程信号处理 */
+/** 父进程信号处理 **/
 // 子进程退出原因说明
 static const char *childexit_to_str(const int no)
 {
@@ -109,6 +113,8 @@ static const char *childexit_to_str(const int no)
     {3, "发生写错误"},
 	{5, "连接失败，达到最大重连次数"},  //按CTRL+C产生，非进程不截获
     {6, "select失败"},
+    {7, "数字证书过期，连接关闭"},
+    {8， "认证非法"},
     {-99, "END"}
 	};
 
@@ -139,7 +145,7 @@ void set_signal_catch()
     signal(SIGCHLD, fun_waitChild); //子进程退出信号
 }
 
-/* TCP建立流程控制 */
+/** TCP建立流程控制 **/
 int set_socket_flag(int sockfd, int FLAG)
 {
     int flags;
@@ -233,7 +239,7 @@ bool connect_with_limit(int sockfd, int maxc)
     return true;
 }
 
-/* 记录日志：写一个专门用于输出日志的函数 */
+/** 记录日志：写一个专门用于输出日志的函数 **/
 //得到当前系统时间
 char* get_time_full(void) 
 {
@@ -262,52 +268,167 @@ char* get_time_full(void)
     return s;
 }
 
-/* 缓冲区处理：封包与拆包 */
+/** 缓冲区处理：封包与拆包 **/
+
+bool unpack_1 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size)
+{
+    //解包
+    u_short vno_main, vno_sub1, vno_sub2; //版本号
+    memcpy(&vno_main, sinfo->recvbuf+8, 2);
+    memcpy(&vno_sub1, sinfo->recvbuf+10, 1);
+    memcpy(&vno_sub2, sinfo->recvbuf+11, 1);
+    vno_main = ntohs(vno_main);
+    u_short delay_fail, delay_succ; //延时设置
+    memcpy(&delay_fail, sinfo->recvbuf+12, 2);
+    memcpy(&delay_succ, sinfo->recvbuf+14, 2);
+    delay_fail = ntohs(delay_fail);
+    delay_succ = ntohs(delay_succ);
+    u_short empty_allow; //是否允许空终端
+    memcpy(&empty_allow, sinfo->recvbuf+16, 1);
+    u_char key[32]; //认证串
+    memcpy(key, sinfo->recvbuf+20, 32);
+    u_int random_num, svr_time; //加密参数
+    memcpy(&random_num, sinfo->recvbuf+52, 4);
+    memcpy(&svr_time,   sinfo->recvbuf+56, 4);
+    random_num = ntohs(random_num);
+    svr_time = ntohs(svr_time);
+
+    //验证与处理    
+    //1、认证串解密
+    if(!decrypt(key, random_num, svr_time)){
+        close(sinfo->sockfd);
+        exit(8); //认证非法
+    }
+    //2、数字证书检查
+    struct tm chk_tm = {2017-1900, 0, 0, 0, 0, 0};
+    u_int chk_time = mktime(&chk_tm);
+    if(svr_time < chk_time){
+        close(sinfo->sockfd);
+        exit(7);//数字证书过期
+    }
+    //3、检查版本号
+    if(vno_main < 2){
+        for(int i = 0; CPINFO[i].no != -99; ++i)
+            if(CPINFO[i].head == 0x0091){
+                CPINFO[i].status = PACK_UNDO; //发送最低版本要求报文
+                break;
+            }
+    }
+
+    for(int i = 0; CPINFO[i].no != -99; ++i){
+        if(CPINFO[i].head == 0x0191){
+            CPINFO[i].status = PACK_UNDO; //发认证串及基本配置信息
+            break;
+        }
+    }
+
+    return true;
+}
+bool unpack_2 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) 
+{
+    return true;
+}
+bool unpack_3 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) 
+{
+    return true;
+}
+bool unpack_4 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) 
+{
+    return true;
+}
+bool unpack_5 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
+bool unpack_6 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
+bool unpack_7 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
+bool unpack_8 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
+bool unpack_9 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
+bool unpack_10(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
+bool unpack_11(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
+bool unpack_12(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
+bool unpack_13(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
+bool unpack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size){return true;}
+
+
 void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 {
     printf("[%d] 当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
+
     return;
 }
 void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 {
     printf("[%d] 当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
-    return;
+    //判断是否进行解包：recvbuf_len大于最小包大小（只含报文头）
+    if(sinfo->recvbuf_len < 8)
+        return;
+
+    //判断包类型，并确定是否解包
+    int p = 0;
+    u_short head;
+    memcpy(&head, sinfo->recvbuf, 2);
+    p+=2;
+    int i;
+    for(i = 0; SPINFO[i].no != -99; ++i)
+        if(head == SPINFO[i].head)
+            break;
+    if(SPINFO[i].no == -99) //非法包，退出
+        return;
+    
+    u_short pack_size;
+    u_short data_size;
+    memcpy(&pack_size, sinfo->recvbuf + p, 2);
+    p += 4;
+    memcpy(&data_size, sinfo->recvbuf + p, 2);
+    p += 2;
+    pack_size = ntohs(pack_size);
+    data_size = ntohs(data_size);
+    if(sinfo->recvbuf_len < (int)pack_size)
+        return; //不完整的包
+
+    printf("[%d] test: head:%d, pack_size:%d, data_size:%d\n", getpid(), head, pack_size, data_size);
+    //若包完整，开始解 i 包
+    if(!SPINFO[i].unpack_fun(sinfo, SPINFO, CPINFO, pack_size))
+        return; //解包失败
+    sinfo->recvbuf_len -= (int)pack_size;
+    if(sinfo->recvbuf_len > 0)
+        memmove(sinfo->recvbuf, sinfo->recvbuf + (int)pack_size, sinfo->recvbuf_len);
+    printf("[%d] 解包成功!\n", getpid());
+    return; //成功
 }
 
 //与Server通信：devid子进程
 int sub(int devid)
 {
     SEVPACK SERVER_PACK_INFO[] = {
-    {1  ,2 , 0x1101, "认证请求", 0,0, PACK_EMPTY},
-    {2  ,3 , 0x1102, "取系统信息", 0,0, PACK_EMPTY},
-    {3  ,4 , 0x1103, "取配置信息", 0,0, PACK_EMPTY},
-    {4  ,5 , 0x1104, "取进程信息", 0,0, PACK_EMPTY},
-    {5  ,6 , 0x1105, "取以太口信息", 0,0, PACK_EMPTY},
-    {6  ,7 , 0x1107, "取USB口信息", 0,0, PACK_EMPTY},
-    {7  ,8 , 0x110c, "取U盘上文件列表信息", 0,0, PACK_EMPTY},
-    {8  ,9 , 0x1108, "取打印口信息", 0,0, PACK_EMPTY},
-    {9  ,10, 0x110d, "取打印队列信息", 0,0, PACK_EMPTY},
-    {10 ,11, 0x1109, "取终端服务信息", 0,0, PACK_EMPTY},
-    {11 ,12, 0x110a, "取哑终端信息", 0,0, PACK_EMPTY},
-    {12 ,13, 0x110b, "取IP终端端信息", 0,0, PACK_EMPTY},
-    {13 ,0 , 0x11ff, "所有包均收到", 0,0, PACK_EMPTY},
-    {-99,0 , 0x0000, "ERR", 0,0, PACK_EMPTY}
+    {1  ,2 , unpack_1  , 0x0111, "认证请求",        PACK_EMPTY},
+    {2  ,3 , unpack_2  , 0x0211, "取系统信息",      PACK_EMPTY},
+    {3  ,4 , unpack_3  , 0x0311, "取配置信息",      PACK_EMPTY},
+    {4  ,5 , unpack_4  , 0x0411, "取进程信息",      PACK_EMPTY},
+    {5  ,6 , unpack_5  , 0x0511, "取以太口信息",    PACK_EMPTY},
+    {6  ,7 , unpack_6  , 0x0711, "取USB口信息",     PACK_EMPTY},
+    {7  ,8 , unpack_7  , 0x0c11, "取U盘上文件列表信息", PACK_EMPTY},
+    {8  ,9 , unpack_8  , 0x0811, "取打印口信息",    PACK_EMPTY},
+    {9  ,10, unpack_9  , 0x0d11, "取打印队列信息",  PACK_EMPTY},
+    {10 ,11, unpack_10 , 0x0911, "取终端服务信息",  PACK_EMPTY},
+    {11 ,12, unpack_11 , 0x0a11, "取哑终端信息",    PACK_EMPTY},
+    {12 ,13, unpack_12 , 0x0b11, "取IP终端端信息",  PACK_EMPTY},
+    {13 ,0 , unpack_13 , 0xff11, "所有包均收到",    PACK_EMPTY},
+    {-99,0 , unpack_err, 0x0000, "ERR",            PACK_EMPTY}
     };
     CLTPACK CLIENT_PACK_INFO[] = {
-    {1  ,0 , 0x9100, "发最低版本要求", PACK_EMPTY},
-    {2  ,0 , 0x9101, "发认证串及基本配置信息", PACK_EMPTY},
-    {3  ,0 , 0x9102, "发系统信息", PACK_EMPTY},
-    {4  ,0 , 0x9103, "发配置信息", PACK_EMPTY},
-    {5  ,0 , 0x9104, "发进程信息", PACK_EMPTY},
-    {6  ,0 , 0x9105, "发以太口信息", PACK_EMPTY},
-    {7  ,0 , 0x9107, "发USB口信息", PACK_EMPTY},
-    {8  ,0 , 0x910c, "发U盘文件列表信息", PACK_EMPTY},
-    {9  ,0 , 0x9108, "发打印口信息", PACK_EMPTY},
-    {10 ,0 , 0x910d, "发打印队列信息", PACK_EMPTY},
-    {11 ,0 , 0x9109, "发终端服务信息", PACK_EMPTY},
-    {12 ,0 , 0x910a, "发哑终端信息", PACK_EMPTY},
-    {13 ,0 , 0x910b, "发IP终端信息", PACK_EMPTY},
-    {14 ,0 , 0x91ff, "所有包均收到", PACK_EMPTY},
+    {1  ,0 , 0x0091, "发最低版本要求", PACK_EMPTY},
+    {2  ,0 , 0x0191, "发认证串及基本配置信息", PACK_EMPTY},
+    {3  ,0 , 0x0291, "发系统信息", PACK_EMPTY},
+    {4  ,0 , 0x0391, "发配置信息", PACK_EMPTY},
+    {5  ,0 , 0x0491, "发进程信息", PACK_EMPTY},
+    {6  ,0 , 0x0591, "发以太口信息", PACK_EMPTY},
+    {7  ,0 , 0x0791, "发USB口信息", PACK_EMPTY},
+    {8  ,0 , 0x0c91, "发U盘文件列表信息", PACK_EMPTY},
+    {9  ,0 , 0x0891, "发打印口信息", PACK_EMPTY},
+    {10 ,0 , 0x0d91, "发打印队列信息", PACK_EMPTY},
+    {11 ,0 , 0x0991, "发终端服务信息", PACK_EMPTY},
+    {12 ,0 , 0x0a91, "发哑终端信息", PACK_EMPTY},
+    {13 ,0 , 0x0b91, "发IP终端信息", PACK_EMPTY},
+    {14 ,0 , 0xff91, "所有包均收到", PACK_EMPTY},
     {-99,0 , 0x0000, "ERR", PACK_EMPTY}
     };
     SOCK_INFO sinfo;
@@ -401,4 +522,3 @@ int main(int argc, char** argv)
         sleep(1);
     }
 }
-

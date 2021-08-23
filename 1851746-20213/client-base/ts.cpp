@@ -114,7 +114,7 @@ static const char *childexit_to_str(const int no)
 	{5, "连接失败，达到最大重连次数"},  //按CTRL+C产生，非进程不截获
     {6, "select失败"},
     {7, "数字证书过期，连接关闭"},
-    {8， "认证非法"},
+    {8, "认证非法"},
     {-99, "END"}
 	};
 
@@ -324,6 +324,7 @@ bool unpack_1 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_
 
     return true;
 }
+
 bool unpack_2 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) 
 {
     return true;

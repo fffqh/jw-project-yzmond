@@ -265,14 +265,13 @@
 	0xea, 0x65, 0x55, 0xa5, 0xbf, 0x64, 0xe7, 0x75, 0xca, 0xdc, 0x7b, 0xde, 0x51, 0x2a, 0xf2, 0x17, 
 	};
 
-
 //Ω‚√‹
 bool decrypt(u_char* key, u_int random_num, u_int &svr_time)
 {
-	u_char* raw_key[] = "yzmond:id*str&to!tongji@by#Auth^";
+	u_char raw_key[] = "yzmond:id*str&to!tongji@by#Auth^";
 	int pos = random_num % 4093;
-	for(int i = 0; i < 32; pos=++pos%4093){
-		key[i] = key[i] ^ secret[pos];
+	for(int i = 0; i < 32; ++i, pos%=4093){
+		key[i] = key[i] ^ secret[pos++];
 	}
 	svr_time = svr_time ^ (u_int)0xFFFFFFFF;
 	if(!memcmp(key, raw_key, 32)){
@@ -288,7 +287,7 @@ void encrypt(u_char* key, u_int & random_num, u_int & svr_time)
     svr_time = (u_int)time(0);
     svr_time = svr_time ^ (u_int)0xFFFFFFFF;
     int pos = random_num % 4093;
-	for(int i = 0; i < 32; ++i, pos=++pos%4093){
-		key[i] = key[i] ^ secret[pos];
+	for(int i = 0; i < 32; ++i, pos%=4093){
+		key[i] = key[i] ^ secret[pos++];
 	}
 }

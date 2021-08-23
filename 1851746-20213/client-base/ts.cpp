@@ -24,7 +24,12 @@
 #define RECV_BUFSIZE    4096
 #define SEND_BUFSIZE    4096
 
-//socket信息结构体
+#define PACK_STOP -2  //阻塞等待中
+#define PACK_UNDO -1  //未处理完成
+#define PACK_EMPTY 0  //空状态
+#define PACK_HALF  1  //未接收/发送完成
+
+//自定义结构体
 typedef struct{
 
     int sockfd;
@@ -36,6 +41,25 @@ typedef struct{
     u_char sendbuf[SEND_BUFSIZE];
 
 }SOCK_INFO;
+
+typedef struct{
+    const int         no;
+    const int        bno; //0表示无需回复
+    const u_short   head;
+    const char      *str;
+    u_short         size;
+    u_short         len;
+    int             status;
+} SEVPACK;
+
+typedef struct{
+    const int       no;
+    const int       bno;
+    const u_short   head;
+    const char      *str;
+    int             status;
+} CLTPACK;
+
 //配置参数
 char _conf_ip[16] = "192.168.1.242";
 int  _conf_port = 51746;
@@ -238,22 +262,62 @@ char* get_time_full(void)
     return s;
 }
 
-/* 封包与拆包 */
-
-
-
+/* 缓冲区处理：封包与拆包 */
+void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
+{
+    printf("[%d] 当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
+    return;
+}
+void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
+{
+    printf("[%d] 当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
+    return;
+}
 
 //与Server通信：devid子进程
 int sub(int devid)
 {
+    SEVPACK SERVER_PACK_INFO[] = {
+    {1  ,2 , 0x1101, "认证请求", 0,0, PACK_EMPTY},
+    {2  ,3 , 0x1102, "取系统信息", 0,0, PACK_EMPTY},
+    {3  ,4 , 0x1103, "取配置信息", 0,0, PACK_EMPTY},
+    {4  ,5 , 0x1104, "取进程信息", 0,0, PACK_EMPTY},
+    {5  ,6 , 0x1105, "取以太口信息", 0,0, PACK_EMPTY},
+    {6  ,7 , 0x1107, "取USB口信息", 0,0, PACK_EMPTY},
+    {7  ,8 , 0x110c, "取U盘上文件列表信息", 0,0, PACK_EMPTY},
+    {8  ,9 , 0x1108, "取打印口信息", 0,0, PACK_EMPTY},
+    {9  ,10, 0x110d, "取打印队列信息", 0,0, PACK_EMPTY},
+    {10 ,11, 0x1109, "取终端服务信息", 0,0, PACK_EMPTY},
+    {11 ,12, 0x110a, "取哑终端信息", 0,0, PACK_EMPTY},
+    {12 ,13, 0x110b, "取IP终端端信息", 0,0, PACK_EMPTY},
+    {13 ,0 , 0x11ff, "所有包均收到", 0,0, PACK_EMPTY},
+    {-99,0 , 0x0000, "ERR", 0,0, PACK_EMPTY}
+    };
+    CLTPACK CLIENT_PACK_INFO[] = {
+    {1  ,0 , 0x9100, "发最低版本要求", PACK_EMPTY},
+    {2  ,0 , 0x9101, "发认证串及基本配置信息", PACK_EMPTY},
+    {3  ,0 , 0x9102, "发系统信息", PACK_EMPTY},
+    {4  ,0 , 0x9103, "发配置信息", PACK_EMPTY},
+    {5  ,0 , 0x9104, "发进程信息", PACK_EMPTY},
+    {6  ,0 , 0x9105, "发以太口信息", PACK_EMPTY},
+    {7  ,0 , 0x9107, "发USB口信息", PACK_EMPTY},
+    {8  ,0 , 0x910c, "发U盘文件列表信息", PACK_EMPTY},
+    {9  ,0 , 0x9108, "发打印口信息", PACK_EMPTY},
+    {10 ,0 , 0x910d, "发打印队列信息", PACK_EMPTY},
+    {11 ,0 , 0x9109, "发终端服务信息", PACK_EMPTY},
+    {12 ,0 , 0x910a, "发哑终端信息", PACK_EMPTY},
+    {13 ,0 , 0x910b, "发IP终端信息", PACK_EMPTY},
+    {14 ,0 , 0x91ff, "所有包均收到", PACK_EMPTY},
+    {-99,0 , 0x0000, "ERR", PACK_EMPTY}
+    };
     SOCK_INFO sinfo;
     sinfo.devid = devid;
 
     if(!create_socket(sinfo.sockfd, 1)){//创建socket，第2个参数代表是否非阻塞
-        return 1;
+        exit(1);
     }
     if(!connect_with_limit(sinfo.sockfd, 5)){//连接Server
-        return 5;
+        exit(5);
     }
     printf("[%d] Connected(%s:%d) OK.\n", getpid(), _conf_ip, _conf_port);
 
@@ -261,7 +325,7 @@ int sub(int devid)
     sinfo.recvbuf_len = 0;
     sinfo.sendbuf_len = 0;
     fd_set rfd_set, wfd_set;
-    int maxfd, maxi;
+    int maxfd;
     int sel;
     int len;
     FD_ZERO(&rfd_set);
@@ -284,6 +348,7 @@ int sub(int devid)
             sinfo.recvbuf_len += len;
             //处理读缓冲区（拆包）
             //...
+            unpack(&sinfo, SERVER_PACK_INFO, CLIENT_PACK_INFO);
         }
         //写
         if( sel>0 && FD_ISSET(sinfo.sockfd, &wfd_set)){
@@ -298,11 +363,12 @@ int sub(int devid)
         }
         //错误
         if(sel < 0){
-            return 6;//Fail to select;
+            exit(6);//Fail to select;
         }
         //超时，继续
+        pack(&sinfo, SERVER_PACK_INFO, CLIENT_PACK_INFO);
     }
-    return 0;//exitcode;
+    exit(0);//exitcode;
 }
 
 //主进程调度

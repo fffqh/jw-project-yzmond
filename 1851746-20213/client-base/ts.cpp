@@ -18,12 +18,25 @@
 #include <sys/wait.h> //waitpid
 #include <sys/fcntl.h>
 
-
-
-
+//常量设置
 #define MAX_RECON_TIME  5
 #define MAX_CON_WATIME  25
+#define RECV_BUFSIZE    4096
+#define SEND_BUFSIZE    4096
 
+//socket信息结构体
+typedef struct{
+
+    int sockfd;
+    int devid;
+
+    int recvbuf_len;
+    int sendbuf_len;
+    u_char recvbuf[RECV_BUFSIZE];
+    u_char sendbuf[SEND_BUFSIZE];
+
+}SOCK_INFO;
+//配置参数
 char _conf_ip[16] = "192.168.1.242";
 int  _conf_port = 51746;
 bool _conf_quit = 1;
@@ -34,10 +47,11 @@ int  _conf_maxsn = 10;
 bool _conf_newlog = 1;
 int  _conf_debug = 111111;
 int  _conf_dprint = 1;
-
+//运行参数
 int  _devid;
 int  _devnum;
 
+/* 参数与配置 */
 //chk_arg: 检查调用参数
 bool chk_arg(int argc, char** argv)
 {
@@ -50,7 +64,6 @@ bool chk_arg(int argc, char** argv)
     _devnum = atoi(argv[2]);
     return true;
 }
-
 //read_conf: 读取配置文件
 bool read_conf()
 {
@@ -58,8 +71,7 @@ bool read_conf()
     return true;
 }
 
-// 信号处理
-
+/* 父进程信号处理 */
 // 子进程退出原因说明
 static const char *childexit_to_str(const int no)
 {
@@ -69,7 +81,10 @@ static const char *childexit_to_str(const int no)
     } signstr[] = {
 	{0,  "读取数据完成,被对端关闭"},
     {1, "创建socket失败"},
+    {2, "发生读错误"},
+    {3, "发生写错误"},
 	{5, "连接失败，达到最大重连次数"},  //按CTRL+C产生，非进程不截获
+    {6, "select失败"},
     {-99, "END"}
 	};
 
@@ -100,7 +115,7 @@ void set_signal_catch()
     signal(SIGCHLD, fun_waitChild); //子进程退出信号
 }
 
-
+/* TCP建立流程控制 */
 int set_socket_flag(int sockfd, int FLAG)
 {
     int flags;
@@ -114,7 +129,6 @@ int set_socket_flag(int sockfd, int FLAG)
     }
     return 1;
 }
-
 //创建socket
 bool create_socket(int & sock_fd, int nonblock = 0)
 {
@@ -195,11 +209,7 @@ bool connect_with_limit(int sockfd, int maxc)
     return true;
 }
 
-//接收数据
-//发送数据
-
-
-//记录日志 写一个专门用于输出日志的函数
+/* 记录日志：写一个专门用于输出日志的函数 */
 //得到当前系统时间
 char* get_time_full(void) 
 {
@@ -228,27 +238,74 @@ char* get_time_full(void)
     return s;
 }
 
+/* 封包与拆包 */
+
+
+
 
 //与Server通信：devid子进程
 int sub(int devid)
 {
-    int sockfd;
-    if(!create_socket(sockfd, 0)){//创建非阻塞socket
+    SOCK_INFO sinfo;
+    sinfo.devid = devid;
+
+    if(!create_socket(sinfo.sockfd, 1)){//创建socket，第2个参数代表是否非阻塞
         return 1;
     }
-    if(!connect_with_limit(sockfd, 5)){//连接Server
+    if(!connect_with_limit(sinfo.sockfd, 5)){//连接Server
         return 5;
     }
     printf("[%d] Connected(%s:%d) OK.\n", getpid(), _conf_ip, _conf_port);
 
-    
+    //使用 select 模型进行读写控制
+    sinfo.recvbuf_len = 0;
+    sinfo.sendbuf_len = 0;
+    fd_set rfd_set, wfd_set;
+    int maxfd, maxi;
+    int sel;
+    int len;
+    FD_ZERO(&rfd_set);
+    FD_ZERO(&wfd_set);
+    while(1){
+        if(sinfo.recvbuf_len < RECV_BUFSIZE) //读缓冲区有空余时，置读fd
+            FD_SET(sinfo.sockfd, &rfd_set);
+        if(sinfo.sendbuf_len > 0) //写缓冲区有内容时，置写fd
+            FD_SET(sinfo.sockfd, &wfd_set);
 
-
-
+        maxfd = sinfo.sockfd + 1;
+        sel = select(maxfd, &rfd_set, &wfd_set, NULL, NULL/*暂时为无限长的等待时间*/);
+        //读
+        if( sel>0 && FD_ISSET(sinfo.sockfd, &rfd_set)){
+            len = recv(sinfo.sockfd, sinfo.recvbuf + sinfo.recvbuf_len, 
+                                            RECV_BUFSIZE - sinfo.recvbuf_len, 0);
+            if(len <= 0){
+                exit(2);//发生读错误
+            }
+            sinfo.recvbuf_len += len;
+            //处理读缓冲区（拆包）
+            //...
+        }
+        //写
+        if( sel>0 && FD_ISSET(sinfo.sockfd, &wfd_set)){
+            len = send(sinfo.sockfd, sinfo.sendbuf, sinfo.sendbuf_len, 0);
+            if(len <= 0){
+                exit(3);//发生写错误
+            }
+            sinfo.sendbuf_len -= len;
+            if(sinfo.sendbuf_len > 0){//将剩余数据前移
+                memmove(sinfo.sendbuf, sinfo.sendbuf + len, sinfo.sendbuf_len);
+            }
+        }
+        //错误
+        if(sel < 0){
+            return 6;//Fail to select;
+        }
+        //超时，继续
+    }
     return 0;//exitcode;
 }
 
-
+//主进程调度
 int main(int argc, char** argv)
 {
 
@@ -278,8 +335,4 @@ int main(int argc, char** argv)
         sleep(1);
     }
 }
-
-
-
-
 

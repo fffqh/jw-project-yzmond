@@ -33,6 +33,9 @@
 #define PACK_EMPTY 0  //空状态
 #define PACK_HALF  1  //未接收/发送完成
 
+#define CONF_DAT_PATH "./config.dat"
+#define PROC_DAT_PATH "./process.dat"
+
 //自定义结构体
 
 struct CLTPACK;
@@ -337,12 +340,45 @@ bool mkpack_sysif(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* n
         return false;
     return true;
 }
-bool mkpack_conf(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
+bool mkpack_str(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-    FILE * fp;
-    
+    FILE * fp = NULL;
+    if(netpack->head.head_index == 0x03){
+        fp = fopen(CONF_DAT_PATH, "r");
+        if(!fp){
+            printf("[%d] mkpack_strm faild! 文件打卡失败(%s)\n", getpid(), CONF_DAT_PATH);
+            return false;
+        }
+    }
+    else if(netpack->head.head_index == 0x04){
+        fp = fopen(PROC_DAT_PATH, "r");
+        if(!fp){
+            printf("[%d] mkpack_strm faild! 文件打卡失败(%s)\n", getpid(), PROC_DAT_PATH);
+            return false;
+        }
+    }
 
+    u_char buf[8191];
+    char c;
+    int  i = 0;
+    while(1){
+        c = fgetc(fp);
+        if(feof(fp) || i >= 8191)
+            break;
+        buf[i++] = c;
+    }
+    buf[i] = '\0';
     fclose(fp);
+
+    if(SEND_BUFSIZE - sinfo->sendbuf_len < i+1+8)
+        return false;
+    if(!netpack->mk_databuf(i+1))
+        return false;
+    netpack->head.data_size = i+1;
+    netpack->head.pack_size = i+1+8;
+    memcpy(netpack->databuf, buf, i+1);
+    if(!netpack->upload(sinfo))
+        return false;
     return true;
 }
 bool mkpack_psif(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
@@ -350,13 +386,10 @@ bool mkpack_psif(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* ne
     return true;
 }
 
-
-
 bool mkpack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
     return true;
 }
-
 bool chkpack_auth (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
     SCP_AUTH * pack = (SCP_AUTH*) netpack->databuf;
@@ -511,8 +544,8 @@ int sub(int devid)
     {1  ,0 , mkpack_vno  , 0x0091, "发最低版本要求", PACK_EMPTY},
     {2  ,0 , mkpack_auth , 0x0191, "发认证串及基本配置信息", PACK_EMPTY},
     {3  ,0 , mkpack_sysif, 0x0291, "发系统信息", PACK_EMPTY},
-    {4  ,0 , mkpack_conf , 0x0391, "发配置信息", PACK_EMPTY},
-    {5  ,0 , mkpack_err  , 0x0491, "发进程信息", PACK_EMPTY},
+    {4  ,0 , mkpack_str  , 0x0391, "发配置信息", PACK_EMPTY},
+    {5  ,0 , mkpack_str  , 0x0491, "发进程信息", PACK_EMPTY},
     {6  ,0 , mkpack_err  , 0x0591, "发以太口信息", PACK_EMPTY},
     {7  ,0 , mkpack_err  , 0x0791, "发USB口信息", PACK_EMPTY},
     {8  ,0 , mkpack_err  , 0x0c91, "发U盘文件列表信息", PACK_EMPTY},

@@ -42,10 +42,46 @@ struct CSP_AUTH{
     u_char  ethnum, syncnum, asyncnum, switchnum;
     u_char  usbnum, prnnum; u_short pad1;
     u_int   devid;
-    u_char  devid_id, pad2; u_short pad3;
+    u_char  devno, pad2; u_short pad3;
     u_char  key[32];
     u_int   random_num;
+    CSP_AUTH( u_short in_cpuMHz, u_short in_MTotal, u_int in_devid){
+        cpuMHz = htons(in_cpuMHz);
+        MTotal = htons(in_MTotal);
+        ROM = htons(581);
+        dev_inid = htons(1746);
+        memcpy(dev_gid, "fanqianhui", sizeof("fanqianhui"));
+        memcpy(dev_tid, "fqh-6471581", sizeof("fqh-6471581"));
+        memcpy(dev_vid, "Ver:1746", sizeof("Ver:1746"));
+        ethnum    =  1 + in_devid%2;
+        syncnum   = 0;
+        asyncnum  = ((in_devid/10) % 3)*8;
+        switchnum = 0;
+        usbnum    = (in_devid/100) % 2;
+        prnnum    = (in_devid/1000) % 2;
+    
+        devid = htonl(in_devid);
+        devno = 1;
+        memcpy(key, "yzmond:id*str&to!tongji@by#Auth^", 32);
+    }
 };
+
+struct CSP_SYSIF{
+    u_int user_cputime;
+    u_int nice_cputime;
+    u_int sys_cputime;
+    u_int idle_cputime;
+    u_int freed_memory;
+    CSP_SYSIF(u_int ut, u_int nt, u_int st, u_int it, u_int m)
+    {
+        user_cputime = htonl(ut);
+        nice_cputime = htonl(nt);
+        sys_cputime  = htonl(st);
+        idle_cputime = htonl(it);
+        freed_memory = htonl(m);
+    }
+};
+
 
 struct CSP_VNO{
     u_short vno_main;

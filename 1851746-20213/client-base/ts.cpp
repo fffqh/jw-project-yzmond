@@ -281,31 +281,78 @@ bool mkpack_vno(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
 }
 bool mkpack_auth(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-    PROCINFO pinfo("/proc/cpuinfo", "cpu MHz");
-    string cpuMHz = pinfo.get();
-    
-    return true;
-}
-bool mkpack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
-{
-    return true;
-}
+    //检查缓冲区空间是否足够
+    if(SEND_BUFSIZE - sinfo->sendbuf_len < 8+(int)sizeof(CSP_AUTH))
+        return false;
+    printf("[%d] 封包pack_auth\n", getpid());  
 
-bool pack_2 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
+    PROCINFO pinfo_cpuMHz("/proc/cpuinfo", "cpu MHz");
+    PROCINFO pinfo_MTotal("/proc/meminfo", "MemTotal");
+    string cpuMHz = pinfo_cpuMHz.get();
+    string MTotal = pinfo_MTotal.get();   
+    if(MTotal == "" || cpuMHz == "")
+        return false;
+    
+    CSP_AUTH pack((u_short)(atoi(cpuMHz.c_str())),(u_short)(((double)(atoi(MTotal.c_str())))/1024), sinfo->devid);
+    //将pack加密
+    u_int random_num;
+    encrypt_client_auth( (u_char*)(&pack), random_num);
+    pack.random_num = htonl(random_num);
+
+    if(!netpack->mk_databuf(sizeof(CSP_AUTH)))
+        return false;
+    netpack->head.data_size = sizeof(CSP_AUTH);
+    netpack->head.pack_size = 8+sizeof(CSP_AUTH);
+    memcpy(netpack->databuf, &pack, sizeof(pack));
+    if(!netpack->upload(sinfo))
+        return false;
+    return true;
+}
+bool mkpack_sysif(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
     //检查缓冲区空间是否足够
-    if(SEND_BUFSIZE-sinfo->sendbuf_len < 116)
+    if(SEND_BUFSIZE - sinfo->sendbuf_len < 8+(int)sizeof(CSP_SYSIF))
         return false;
-    printf("[%d] 封包pack2（%s）\n", getpid(), CPINFO[1].str);   
-    //数据的准备
-    u_short head = 0x0191;
-    u_short pack_size = htons(116);
-    u_short data_size = htons(108);
-    u_short pad = 0x0000;
+    printf("[%d] 封包pack_sysif\n", getpid()); 
+    
+    PROCINFO pinfo_cpu("/proc/stat", "cpu");
+    string cpu = pinfo_cpu.get();
+    char buf[5]; u_int ut, nt, st, it;
+    sscanf(cpu.c_str(), " %s %u %u %u %u", buf, &ut, &nt, &st, &it);
+    u_int m1, m2, m3;
+    PROCINFO pinfo_m1("/proc/meminfo", "MemFree");
+    PROCINFO pinfo_m2("/proc/meminfo", "MemAvailable");
+    PROCINFO pinfo_m3("/proc/meminfo", "Cached");
+    m1 = atol(pinfo_m1.get().c_str());
+    m2 = atol(pinfo_m2.get().c_str());
+    m3 = atol(pinfo_m3.get().c_str());
 
+    CSP_SYSIF pack(ut, nt, st, it, m1+m2+m3);
+    if(!netpack->mk_databuf(sizeof(CSP_SYSIF)))
+        return false;
+    netpack->head.data_size = sizeof(CSP_SYSIF);
+    netpack->head.pack_size = 8 + sizeof(CSP_SYSIF);
+    memcpy(netpack->databuf, &pack, sizeof(pack));
+    if(!netpack->upload(sinfo))
+        return false;
     return true;
 }
-bool pack_3 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
+bool mkpack_conf(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
+{
+    FILE * fp;
+    
+
+    fclose(fp);
+    return true;
+}
+bool mkpack_psif(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
+{
+    return true;
+}
+
+
+
+bool mkpack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
     return true;
 }
@@ -342,7 +389,7 @@ bool chkpack_auth (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* 
             }
     }
     //test
-    CPINFO[0].status = PACK_UNDO; //发送最低版本要求报文
+    //CPINFO[0].status = PACK_UNDO; //发送最低版本要求报文
 
     for(int i = 0; CPINFO[i].no != -99; ++i){
         if(CPINFO[i].head == 0x0191){
@@ -382,7 +429,7 @@ bool chkpack_err (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* n
 //主接口
 void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 {
-    printf("[%d] 当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
+    printf("[%d] （pack检查前）当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
     //检查是否需要封包
     for(int i = 0; CPINFO[i].no!=-99; ++i){
         if(CPINFO[i].status == PACK_UNDO){ //需要封包
@@ -393,12 +440,12 @@ void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
                 CPINFO[i].status = PACK_EMPTY; //已成功封包
         }
     }
-    printf("[%d] 当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
+    printf("[%d] （pack检查后）当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
     return;
 }
 void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 {
-    printf("[%d] 当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
+    printf("[%d] （unpack检查前）当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
     //判断是否进行解包：recvbuf_len大于最小包大小（只含报文头）
     if(sinfo->recvbuf_len < 8)
         return;
@@ -463,8 +510,8 @@ int sub(int devid)
     CLTPACK CLIENT_PACK_INFO[] = {
     {1  ,0 , mkpack_vno  , 0x0091, "发最低版本要求", PACK_EMPTY},
     {2  ,0 , mkpack_auth , 0x0191, "发认证串及基本配置信息", PACK_EMPTY},
-    {3  ,0 , mkpack_err  , 0x0291, "发系统信息", PACK_EMPTY},
-    {4  ,0 , mkpack_err  , 0x0391, "发配置信息", PACK_EMPTY},
+    {3  ,0 , mkpack_sysif, 0x0291, "发系统信息", PACK_EMPTY},
+    {4  ,0 , mkpack_conf , 0x0391, "发配置信息", PACK_EMPTY},
     {5  ,0 , mkpack_err  , 0x0491, "发进程信息", PACK_EMPTY},
     {6  ,0 , mkpack_err  , 0x0591, "发以太口信息", PACK_EMPTY},
     {7  ,0 , mkpack_err  , 0x0791, "发USB口信息", PACK_EMPTY},
@@ -495,16 +542,19 @@ int sub(int devid)
     int maxfd;
     int sel;
     int len;
-    FD_ZERO(&rfd_set);
-    FD_ZERO(&wfd_set);
     while(1){
+        FD_ZERO(&rfd_set);
+        FD_ZERO(&wfd_set);
         if(sinfo.recvbuf_len < RECV_BUFSIZE) //读缓冲区有空余时，置读fd
             FD_SET(sinfo.sockfd, &rfd_set);
         if(sinfo.sendbuf_len > 0) //写缓冲区有内容时，置写fd
             FD_SET(sinfo.sockfd, &wfd_set);
+        //test
+        //printf("[%d] test wfd:%d\n", getpid(), FD_ISSET(sinfo.sockfd, &wfd_set));
 
         maxfd = sinfo.sockfd + 1;
         sel = select(maxfd, &rfd_set, &wfd_set, NULL, NULL/*暂时为无限长的等待时间*/);
+        printf("[%d] test select 返回 --- --- --- --- --- ---\n", getpid());
         //读
         if( sel>0 && FD_ISSET(sinfo.sockfd, &rfd_set)){
             len = recv(sinfo.sockfd, sinfo.recvbuf + sinfo.recvbuf_len, 
@@ -520,7 +570,7 @@ int sub(int devid)
         //写
         if( sel>0 && FD_ISSET(sinfo.sockfd, &wfd_set)){
             len = send(sinfo.sockfd, sinfo.sendbuf, sinfo.sendbuf_len, 0);
-            if(len <= 0){
+            if(len < 0){
                 exit(3);//发生写错误
             }
             sinfo.sendbuf_len -= len;

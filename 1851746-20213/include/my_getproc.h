@@ -31,9 +31,14 @@ public:
         while(getline(fin,buf))
         {
             if(buf.find(proc_name)!=buf.npos){ //’“µΩ
-                int st = buf.find(":");
-                int size = buf.length() - st -1;
-                info = buf.substr(st + 1, size);
+                int st;
+                if(st = buf.find(":") != buf.npos){
+                    int size = buf.length() - st -1;
+                    info = buf.substr(st + 1, size);
+                }
+                else{
+                    info = buf;
+                }                
                 break;
             }
         }

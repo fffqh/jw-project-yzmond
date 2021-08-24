@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
 #include <string.h>
 #include <time.h>
 #include <sys/socket.h>
@@ -279,7 +280,6 @@ bool decrypt(u_char* key, u_int random_num, u_int &svr_time)
 	}
     return true;
 }
-
 //º”√‹
 void encrypt(u_char* key, u_int & random_num, u_int & svr_time)
 {
@@ -289,5 +289,19 @@ void encrypt(u_char* key, u_int & random_num, u_int & svr_time)
     int pos = random_num % 4093;
 	for(int i = 0; i < 32; ++i, pos%=4093){
 		key[i] = key[i] ^ secret[pos++];
+	}
+}
+
+bool decrypt_client_auth()
+{
+	return true;
+}
+void encrypt_client_auth(u_char* content, u_int & random_num)
+{
+	int pos;
+	random_num = (u_int) rand();
+	pos = random_num % 4093;
+	for(int i = 0; i < 104; ++i, pos%=4093){
+		content[i] = content[i] ^ secret[pos++];
 	}
 }

@@ -35,6 +35,7 @@
 
 #define CONF_DAT_PATH "./config.dat"
 #define PROC_DAT_PATH "./process.dat"
+#define USBF_DAT_PATH "./usefiles.dat"
 
 //自定义结构体
 
@@ -342,33 +343,35 @@ bool mkpack_sysif(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* n
 }
 bool mkpack_str(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
+    int max_size = 8191;
     FILE * fp = NULL;
     if(netpack->head.head_index == 0x03){
         fp = fopen(CONF_DAT_PATH, "r");
-        if(!fp){
-            printf("[%d] mkpack_strm faild! 文件打卡失败(%s)\n", getpid(), CONF_DAT_PATH);
-            return false;
-        }
-    }
-    else if(netpack->head.head_index == 0x04){
+    }else if(netpack->head.head_index == 0x04){
         fp = fopen(PROC_DAT_PATH, "r");
-        if(!fp){
-            printf("[%d] mkpack_strm faild! 文件打卡失败(%s)\n", getpid(), PROC_DAT_PATH);
-            return false;
-        }
+    }else if(netpack->head.head_index == 0x0c){
+        fp = fopen(USBF_DAT_PATH, "r");        
+        max_size = 4095;
+    }else if(netpack->head.head_index == 0x0d){
+        max_size = 0;
+    }
+
+    if(max_size && !fp){
+        printf("[%d] mkpack_strm faild! 文件打开失败\n", getpid());
+        return false;
     }
 
     u_char buf[8191];
     char c;
     int  i = 0;
-    while(1){
+    while(max_size && i){
         c = fgetc(fp);
-        if(feof(fp) || i >= 8191)
+        if(feof(fp) || i >= max_size)
             break;
         buf[i++] = c;
     }
     buf[i] = '\0';
-    fclose(fp);
+    if(fp) fclose(fp);
 
     if(SEND_BUFSIZE - sinfo->sendbuf_len < i+1+8)
         return false;
@@ -381,10 +384,57 @@ bool mkpack_str(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
         return false;
     return true;
 }
-bool mkpack_psif(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
+bool mkpack_eth(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
     return true;
 }
+bool mkpack_usb(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
+{
+    if(SEND_BUFSIZE - sinfo->sendbuf_len < 8+(int)sizeof(CSP_USBIF))
+        return false;
+    CSP_USBIF pack(sinfo->devid);
+    if(!netpack->mk_databuf(sizeof(CSP_USBIF)))
+        return false;
+    netpack->head.data_size = sizeof(CSP_USBIF);
+    netpack->head.pack_size = 8 + sizeof(CSP_USBIF);
+    memcpy(netpack->databuf, &pack, sizeof(pack));
+    if(!netpack->upload(sinfo))
+        return false;
+
+    if(pack.is_usb){
+        for(int i = 0; CLTPACK[i].no!=-99; ++i){
+            if(CLTPACK[i].head == 0x0c91){
+                CLTPACK[i].status = PACK_UNDO;
+                break;
+            }
+        }
+    }
+    return true;
+}
+bool mkpack_prn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
+{
+    if(SEND_BUFSIZE - sinfo->sendbuf_len < 8+(int)sizeof(CSP_PRNIF))
+        return false;
+    CSP_PRNIF pack(sinfo->devid);
+    if(!netpack->mk_databuf(sizeof(CSP_PRNIF)))
+        return false;
+    netpack->head.data_size = sizeof(CSP_PRNIF);
+    netpack->head.pack_size = 8 + sizeof(CSP_PRNIF);
+    memcpy(netpack->databuf, &pack, sizeof(pack));
+    if(!netpack->upload(sinfo))
+        return false;
+    
+    if(ntohs(pack.work_num) >0){
+        for(int i = 0; CLTPACK[i].no!=-99; ++i){
+            if(CLTPACK[i].head == 0x0d91){
+                CLTPACK[i].status = PACK_UNDO;
+                break;
+            }
+        }
+    }
+    return true;
+}
+
 
 bool mkpack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
@@ -547,10 +597,10 @@ int sub(int devid)
     {4  ,0 , mkpack_str  , 0x0391, "发配置信息", PACK_EMPTY},
     {5  ,0 , mkpack_str  , 0x0491, "发进程信息", PACK_EMPTY},
     {6  ,0 , mkpack_err  , 0x0591, "发以太口信息", PACK_EMPTY},
-    {7  ,0 , mkpack_err  , 0x0791, "发USB口信息", PACK_EMPTY},
-    {8  ,0 , mkpack_err  , 0x0c91, "发U盘文件列表信息", PACK_EMPTY},
-    {9  ,0 , mkpack_err  , 0x0891, "发打印口信息", PACK_EMPTY},
-    {10 ,0 , mkpack_err  , 0x0d91, "发打印队列信息", PACK_EMPTY},
+    {7  ,0 , mkpack_usb  , 0x0791, "发USB口信息", PACK_EMPTY},
+    {8  ,0 , mkpack_str  , 0x0c91, "发U盘文件列表信息", PACK_EMPTY},
+    {9  ,0 , mkpack_prn  , 0x0891, "发打印口信息", PACK_EMPTY},
+    {10 ,0 , mkpack_str  , 0x0d91, "发打印队列信息", PACK_EMPTY},
     {11 ,0 , mkpack_err  , 0x0991, "发终端服务信息", PACK_EMPTY},
     {12 ,0 , mkpack_err  , 0x0a91, "发哑终端信息", PACK_EMPTY},
     {13 ,0 , mkpack_err  , 0x0b91, "发IP终端信息", PACK_EMPTY},

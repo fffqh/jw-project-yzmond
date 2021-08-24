@@ -94,6 +94,31 @@ struct CSP_VNO{
     }
 };
 
+struct CSP_USBIF{
+    u_char is_usb; u_char pad1;
+    u_short pad2;
+    CSP_USBIF(u_int devid){
+        is_usb = (u_char) (devid%2);
+        pad1 = 0x00;
+        pad2 = 0x0000;
+    }
+};
+
+struct CSP_PRNIF{
+    u_char is_live; u_char pad1; 
+    u_short work_num;
+    u_char name[12];
+    CSP_PRNIF(u_int devid){
+        is_live = (u_char)((devid/10) %2);
+        if(is_live){
+            work_num = htons((devid % 100) % 25);
+        }else{
+            work_num = htons(0);
+        }
+        memcpy(name, "PRN-fqh-1746", 12);
+    }
+}
+
 class NETPACK{
 public:
     /*°üÊý¾Ý*/

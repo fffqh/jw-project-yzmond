@@ -19,12 +19,13 @@
 #include <sys/fcntl.h>
 
 #include "../include/my_encrpty.h"
+#include "../include/my_socket.h"
+#include "../include/my_pack.h"
 
 //常量设置
 #define MAX_RECON_TIME  5
 #define MAX_CON_WATIME  25
-#define RECV_BUFSIZE    4096
-#define SEND_BUFSIZE    4096
+
 
 #define PACK_STOP -2  //阻塞等待中
 #define PACK_UNDO -1  //未处理完成
@@ -32,21 +33,9 @@
 #define PACK_HALF  1  //未接收/发送完成
 
 //自定义结构体
-typedef struct{
-
-    int sockfd;
-    int devid;
-
-    int recvbuf_len;
-    int sendbuf_len;
-    u_char recvbuf[RECV_BUFSIZE];
-    u_char sendbuf[SEND_BUFSIZE];
-
-}SOCK_INFO;
 
 struct CLTPACK;
 struct SEVPACK;
-
 struct SEVPACK{
     const int       no;
     const int       bno; //0表示无需回复
@@ -55,14 +44,15 @@ struct SEVPACK{
     const char      *str;
     int             status;
 };
-
 struct CLTPACK{
     const int       no;
     const int       bno;
+    bool (*pack_fun)(SOCK_INFO*, SEVPACK*, CLTPACK*); //封包函数
     const u_short   head;
     const char      *str;
     int             status;
 };
+
 
 //配置参数
 char _conf_ip[16] = "192.168.1.242";
@@ -270,6 +260,74 @@ char* get_time_full(void)
 
 /** 缓冲区处理：封包与拆包 **/
 
+bool pack_1 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
+{
+    //检查缓冲区空间是否足够
+    if(SEND_BUFSIZE-sinfo->sendbuf_len < 12)
+        return false;
+
+    printf("[%d] 封包pack1\n", getpid());   
+    //向sendbuf中写入信息
+    u_short head = 0x0091;
+    u_short pack_size = htons(12);
+    u_short pad = htons(0x0000);
+    u_short data_size = htons(4);
+    u_short vno_main = htons(2);
+    u_short vno_sub1 = 0;
+    u_short vno_sub2 = 0;
+    int p = p;
+    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &head, 2); //head
+    p += 2;
+    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &pack_size, 2); //报文总长度
+    p += 2;
+    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &pad, 2); //pad
+    p += 2;
+    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &data_size, 2); //报文数据长度
+    p += 2;
+    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &vno_main, 2); //主版本号
+    p += 2;
+    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &vno_sub1, 1); //次1版本号
+    p += 1;
+    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &vno_sub2, 1); //次2版本号
+    p += 1;
+    //更新信息    
+    sinfo->sendbuf_len += p;
+    return true;
+}
+bool pack_2 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
+{
+    //检查缓冲区空间是否足够
+    if(SEND_BUFSIZE-sinfo->sendbuf_len < 116)
+        return false;
+    printf("[%d] 封包pack2（%s）\n", getpid(), CPINFO[1].str);   
+    //数据的准备
+    u_short head = 0x0191;
+    u_short pack_size = htons(116);
+    u_short data_size = htons(108);
+    u_short pad = 0x0000;
+
+
+
+
+    return true;
+}
+bool pack_3 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
+{
+    return true;
+}
+bool pack_4 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
+bool pack_5 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
+bool pack_6 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
+bool pack_7 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
+bool pack_8 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
+bool pack_9 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
+bool pack_10(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
+bool pack_11(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
+bool pack_12(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
+bool pack_13(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
+bool pack_14(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
+bool pack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
+
 bool unpack_1 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size)
 {
     //解包
@@ -324,7 +382,6 @@ bool unpack_1 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_
 
     return true;
 }
-
 bool unpack_2 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) 
 {
     return true;
@@ -352,7 +409,15 @@ bool unpack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack
 void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 {
     printf("[%d] 当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
-
+    //检查是否需要封包
+    for(int i = 0; CPINFO[i].no!=-99; ++i){
+        if(CPINFO[i].status == PACK_UNDO){ //需要封包
+            printf("[%d] 检查pack%d\n", getpid(), CPINFO[i].no);
+            if(CPINFO[i].pack_fun(sinfo, SPINFO, CPINFO))
+                CPINFO[i].status = PACK_EMPTY; //已成功封包
+        }
+    }
+    printf("[%d] 当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
     return;
 }
 void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
@@ -393,6 +458,7 @@ void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
     if(sinfo->recvbuf_len > 0)
         memmove(sinfo->recvbuf, sinfo->recvbuf + (int)pack_size, sinfo->recvbuf_len);
     printf("[%d] 解包成功!\n", getpid());
+    printf("[%d] 当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
     return; //成功
 }
 
@@ -416,21 +482,21 @@ int sub(int devid)
     {-99,0 , unpack_err, 0x0000, "ERR",            PACK_EMPTY}
     };
     CLTPACK CLIENT_PACK_INFO[] = {
-    {1  ,0 , 0x0091, "发最低版本要求", PACK_EMPTY},
-    {2  ,0 , 0x0191, "发认证串及基本配置信息", PACK_EMPTY},
-    {3  ,0 , 0x0291, "发系统信息", PACK_EMPTY},
-    {4  ,0 , 0x0391, "发配置信息", PACK_EMPTY},
-    {5  ,0 , 0x0491, "发进程信息", PACK_EMPTY},
-    {6  ,0 , 0x0591, "发以太口信息", PACK_EMPTY},
-    {7  ,0 , 0x0791, "发USB口信息", PACK_EMPTY},
-    {8  ,0 , 0x0c91, "发U盘文件列表信息", PACK_EMPTY},
-    {9  ,0 , 0x0891, "发打印口信息", PACK_EMPTY},
-    {10 ,0 , 0x0d91, "发打印队列信息", PACK_EMPTY},
-    {11 ,0 , 0x0991, "发终端服务信息", PACK_EMPTY},
-    {12 ,0 , 0x0a91, "发哑终端信息", PACK_EMPTY},
-    {13 ,0 , 0x0b91, "发IP终端信息", PACK_EMPTY},
-    {14 ,0 , 0xff91, "所有包均收到", PACK_EMPTY},
-    {-99,0 , 0x0000, "ERR", PACK_EMPTY}
+    {1  ,0 , pack_1 , 0x0091, "发最低版本要求", PACK_EMPTY},
+    {2  ,0 , pack_2 , 0x0191, "发认证串及基本配置信息", PACK_EMPTY},
+    {3  ,0 , pack_3 , 0x0291, "发系统信息", PACK_EMPTY},
+    {4  ,0 , pack_4 , 0x0391, "发配置信息", PACK_EMPTY},
+    {5  ,0 , pack_5 , 0x0491, "发进程信息", PACK_EMPTY},
+    {6  ,0 , pack_6 , 0x0591, "发以太口信息", PACK_EMPTY},
+    {7  ,0 , pack_7 , 0x0791, "发USB口信息", PACK_EMPTY},
+    {8  ,0 , pack_8 , 0x0c91, "发U盘文件列表信息", PACK_EMPTY},
+    {9  ,0 , pack_9 , 0x0891, "发打印口信息", PACK_EMPTY},
+    {10 ,0 , pack_10, 0x0d91, "发打印队列信息", PACK_EMPTY},
+    {11 ,0 , pack_11, 0x0991, "发终端服务信息", PACK_EMPTY},
+    {12 ,0 , pack_12, 0x0a91, "发哑终端信息", PACK_EMPTY},
+    {13 ,0 , pack_13, 0x0b91, "发IP终端信息", PACK_EMPTY},
+    {14 ,0 , pack_14, 0xff91, "所有包均收到", PACK_EMPTY},
+    {-99,0 , pack_err, 0x0000, "ERR", PACK_EMPTY}
     };
     SOCK_INFO sinfo;
     sinfo.devid = devid;
@@ -482,6 +548,7 @@ int sub(int devid)
             if(sinfo.sendbuf_len > 0){//将剩余数据前移
                 memmove(sinfo.sendbuf, sinfo.sendbuf + len, sinfo.sendbuf_len);
             }
+            printf("[%d] 发送字节数:%d，senbuf_len:%d\n", getpid(), len, sinfo.sendbuf_len);
         }
         //错误
         if(sel < 0){

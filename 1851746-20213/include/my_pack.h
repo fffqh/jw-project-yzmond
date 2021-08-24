@@ -3,6 +3,7 @@
 #include <string>
 #include <string.h>
 #include <unistd.h>
+#include <ctype.h> //判断可见字符
 #include <sys/socket.h>
 
 using namespace std;
@@ -24,31 +25,62 @@ struct HEADPACK{
     u_short data_size;
 };
 
+struct SCP_AUTH{
+    u_short vno_main;                u_char vno_sub1, vno_sub2;
+    u_short dt_fail;                 u_short dt_succ;
+    u_char ety_allow; u_char pad1;   u_short pad2;
+    u_char key[32];
+    u_int random_num, svr_time;
+};
+
+struct CSP_AUTH{
+    u_short cpuMHz; u_short MTotal;
+    u_short ROM;    u_short dev_inid;
+    u_char  dev_gid[16];
+    u_char  dev_tid[16];
+    u_char  dev_vid[16];
+    u_char  ethnum, syncnum, asyncnum, switchnum;
+    u_char  usbnum, prnnum; u_short pad1;
+    u_int   devid;
+    u_char  devid_id, pad2; u_short pad3;
+    u_char  key[32];
+    u_int   random_num;
+};
+
+struct CSP_VNO{
+    u_short vno_main;
+    u_char  vno_sub1;
+    u_char  vno_sub2;
+    CSP_VNO(u_short m, u_char s1, u_char s2){
+        vno_main = htons(m);
+        vno_sub1 = s1;
+        vno_sub2 = s2;
+    }
+};
+
 class NETPACK{
 public:
     /*包数据*/
     HEADPACK head;
-    string data;
+    u_char* databuf;
     
     /*构造函数*/
     NETPACK() //拆包
     {
-        std::fill(&head, &head + sizeof(head), 0);
-        data = "";
+        head = {0};
+        databuf = NULL;
     };
     NETPACK(u_short head_info) //封包
     {
-        memcopy(&(head.head_type), &head_info, 1);
-        memcopy(&(head.head_index), (void*)(&head_info) + 1, 1);
+        memcpy(&(head.head_type), &head_info, 1);
+        memcpy(&(head.head_index), (u_char*)(&head_info) + 1, 1);
         head.pad = 0x0000;
+        databuf = NULL;
     }
+    /*析构函数*/
+    ~NETPACK(){if(databuf) delete databuf;}
+
     /*操作函数*/
-    //计算包大小
-    u_short size()
-    {
-        head.data_size = data.size();
-        return head.pack_size = head.data_size + 8;
-    }
     //装载包
     bool upload(SOCK_INFO* sinfo)
     {
@@ -61,7 +93,7 @@ public:
         head.pack_size = htons(head.pack_size);
         //to sendbuf
         memcpy(sinfo->sendbuf + sinfo->sendbuf_len, &head, psize-dsize);
-        memcpy(sinfo->sendbuf + sinfo->sendbuf_len + psize-dsize, data.c_str(), dsize);
+        memcpy(sinfo->sendbuf + sinfo->sendbuf_len + psize-dsize, databuf, dsize);
         sinfo->sendbuf_len += psize;
         return true;
     }
@@ -70,28 +102,76 @@ public:
     {
         if( !pack_size || sinfo->recvbuf_len < pack_size)
             return false;
-        
+        //得到报文头
         memcpy(&head, sinfo->recvbuf, pack_size - data_size);
         head.pack_size = ntohs(head.pack_size);
         head.data_size = ntohs(head.data_size);
         printf("[%d] 得到报文头 head_type:0x%02x head_index:0x%02x pack_size:%d data_size:%d\n"
                 , getpid(), head.head_type, head.head_index, head.pack_size, head.data_size);
-
-        u_char c = *(sinfo->recvbuf + pack_size);
-        *(sinfo->recvbuf + pack_size) = '\0';
-        data = string(sinfo->recvbuf + pack_size - data_size);
-        *(sinfo->recvbuf + pack_size) = c;
-        printf("[%d] 得到报文(len:%d) data:%s\n"
-                , getpid(), data.length(), data.c_str());
-        
+        //得到报文数据
+        databuf = new (nothrow) u_char[data_size];
+        if(!databuf){
+            printf("[%d] dwload failed！动态申请空间失败\n", getpid());
+            return false;
+        }
+        memcpy(databuf, sinfo->recvbuf+pack_size-data_size, data_size);
+        printf("[%d] 得到报文(len:%d) data_first:%02x\n"
+                , getpid(), data_size, databuf[0]);
+        //更新recvbuf_len
         sinfo->recvbuf_len -= pack_size;
         if(sinfo->recvbuf_len > 0)
             memmove(sinfo->recvbuf, sinfo->recvbuf + pack_size, sinfo->recvbuf_len);
+        //to_log
+        data_tolog("./client_data.log", data_size);
         return true;
     }
+    //申请包空间
+    bool mk_databuf(int size)
+    {
+        if(size <= 0)
+            return false;
+        databuf = new (nothrow) u_char [size];
+        if(!databuf){
+            printf("[%d] mk_databuf failed！动态申请空间失败\n", getpid());
+            return false;
+        }
+
+        return true;
+    }
+
+private:
+    void data_tolog(string log_path, int data_size)
+    {
+        FILE* fp = NULL;
+        fp = fopen(log_path.c_str(), "a"); //追加写
+        if(!fp){
+            printf("[%d] data_tolog failed！文件打开失败（%s）\n", getpid(), log_path.c_str());
+            return;
+        }
+
+        //将databuf按格式写入log
+        for(int i = 0; i < (data_size + 15)/16; ++i){ //按行
+            fprintf(fp, "  %04X: ", i);
+            //hex
+            for(int k = 0; k < 8; ++k){
+                (16*i+k < data_size)? fprintf(fp, " %02x", databuf[16*i+k]): fprintf(fp, "   ");
+            }
+            fprintf(fp, " -");
+            for(int k = 8; k < 16; ++k){
+                (16*i+k < data_size)? fprintf(fp, " %02x", databuf[16*i+k]):fprintf(fp, "   ");
+            }
+            fprintf(fp, "  ");
+            //char
+            for(int k = 0; k < 16; ++k){
+                if(16*i+k < data_size){
+                    (isprint(databuf[16*i+k]) && !iscntrl(databuf[16*i+k])) ? 
+                        fprintf(fp, "%c", databuf[16*i+k]) : 
+                        fprintf(fp, ".");
+                }
+            }
+            fprintf(fp, "\n");
+        }
+        fclose(fp);
+    }
+
 };
-
-
-
-
-

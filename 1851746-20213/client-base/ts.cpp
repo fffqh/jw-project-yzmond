@@ -21,6 +21,7 @@
 #include "../include/my_encrpty.h"
 #include "../include/my_socket.h"
 #include "../include/my_pack.h"
+#include "../include/my_getproc.h"
 
 //常量设置
 #define MAX_RECON_TIME  5
@@ -39,7 +40,7 @@ struct SEVPACK;
 struct SEVPACK{
     const int       no;
     const int       bno; //0表示无需回复
-    bool (*unpack_fun)(SOCK_INFO*, SEVPACK*, CLTPACK*, u_short); //解包函数
+    bool (*unpack_fun)(SOCK_INFO*, SEVPACK*, CLTPACK*, NETPACK*); //解包函数
     const u_short   head;
     const char      *str;
     int             status;
@@ -47,7 +48,7 @@ struct SEVPACK{
 struct CLTPACK{
     const int       no;
     const int       bno;
-    bool (*pack_fun)(SOCK_INFO*, SEVPACK*, CLTPACK*); //封包函数
+    bool (*pack_fun)(SOCK_INFO*, SEVPACK*, CLTPACK*, NETPACK*); //封包函数
     const u_short   head;
     const char      *str;
     int             status;
@@ -259,41 +260,37 @@ char* get_time_full(void)
 }
 
 /** 缓冲区处理：封包与拆包 **/
-
-bool pack_1 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
+//专包接口
+bool mkpack_vno(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
     //检查缓冲区空间是否足够
-    if(SEND_BUFSIZE-sinfo->sendbuf_len < 12)
+    if(SEND_BUFSIZE - sinfo->sendbuf_len < 12)
+        return false;
+    printf("[%d] 封包pack_vno\n", getpid());   
+    
+    CSP_VNO pack(2,0,0);
+    if(!netpack->mk_databuf(sizeof(CSP_VNO)))
+        return false;
+    netpack->head.data_size = sizeof(CSP_VNO);
+    netpack->head.pack_size = 8 + sizeof(CSP_VNO);
+    memcpy(netpack->databuf, &pack, sizeof(pack));
+    if(!netpack->upload(sinfo))
         return false;
 
-    printf("[%d] 封包pack1\n", getpid());   
-    //向sendbuf中写入信息
-    u_short head = 0x0091;
-    u_short pack_size = htons(12);
-    u_short pad = htons(0x0000);
-    u_short data_size = htons(4);
-    u_short vno_main = htons(2);
-    u_short vno_sub1 = 0;
-    u_short vno_sub2 = 0;
-    int p = p;
-    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &head, 2); //head
-    p += 2;
-    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &pack_size, 2); //报文总长度
-    p += 2;
-    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &pad, 2); //pad
-    p += 2;
-    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &data_size, 2); //报文数据长度
-    p += 2;
-    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &vno_main, 2); //主版本号
-    p += 2;
-    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &vno_sub1, 1); //次1版本号
-    p += 1;
-    memcpy(sinfo->sendbuf + sinfo->sendbuf_len + p, &vno_sub2, 1); //次2版本号
-    p += 1;
-    //更新信息    
-    sinfo->sendbuf_len += p;
     return true;
 }
+bool mkpack_auth(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
+{
+    PROCINFO pinfo("/proc/cpuinfo", "cpu MHz");
+    string cpuMHz = pinfo.get();
+    
+    return true;
+}
+bool mkpack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
+{
+    return true;
+}
+
 bool pack_2 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 {
     //检查缓冲区空间是否足够
@@ -306,72 +303,46 @@ bool pack_2 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
     u_short data_size = htons(108);
     u_short pad = 0x0000;
 
-
-
-
     return true;
 }
 bool pack_3 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 {
     return true;
 }
-bool pack_4 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
-bool pack_5 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
-bool pack_6 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
-bool pack_7 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
-bool pack_8 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
-bool pack_9 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
-bool pack_10(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
-bool pack_11(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
-bool pack_12(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
-bool pack_13(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
-bool pack_14(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
-bool pack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO){return true;}
 
-bool unpack_1 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size)
+bool chkpack_auth (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-    //解包
-    u_short vno_main, vno_sub1, vno_sub2; //版本号
-    memcpy(&vno_main, sinfo->recvbuf+8, 2);
-    memcpy(&vno_sub1, sinfo->recvbuf+10, 1);
-    memcpy(&vno_sub2, sinfo->recvbuf+11, 1);
-    vno_main = ntohs(vno_main);
-    u_short delay_fail, delay_succ; //延时设置
-    memcpy(&delay_fail, sinfo->recvbuf+12, 2);
-    memcpy(&delay_succ, sinfo->recvbuf+14, 2);
-    delay_fail = ntohs(delay_fail);
-    delay_succ = ntohs(delay_succ);
-    u_short empty_allow; //是否允许空终端
-    memcpy(&empty_allow, sinfo->recvbuf+16, 1);
-    u_char key[32]; //认证串
-    memcpy(key, sinfo->recvbuf+20, 32);
-    u_int random_num, svr_time; //加密参数
-    memcpy(&random_num, sinfo->recvbuf+52, 4);
-    memcpy(&svr_time,   sinfo->recvbuf+56, 4);
-    random_num = ntohs(random_num);
-    svr_time = ntohs(svr_time);
+    SCP_AUTH * pack = (SCP_AUTH*) netpack->databuf;
+    pack->vno_main = ntohs(pack->vno_main);
+    pack->dt_fail = ntohs(pack->dt_fail);
+    pack->dt_succ = ntohs(pack->dt_succ);
+    pack->random_num = ntohs(pack->random_num);
+    pack->svr_time = ntohs(pack->svr_time);
+
 
     //验证与处理    
     //1、认证串解密
-    if(!decrypt(key, random_num, svr_time)){
+    if(!decrypt(pack->key, pack->random_num, pack->svr_time)){
         close(sinfo->sockfd);
         exit(8); //认证非法
     }
     //2、数字证书检查
     struct tm chk_tm = {2017-1900, 0, 0, 0, 0, 0};
     u_int chk_time = mktime(&chk_tm);
-    if(svr_time < chk_time){
+    if(pack->svr_time < chk_time){
         close(sinfo->sockfd);
         exit(7);//数字证书过期
     }
     //3、检查版本号
-    if(vno_main < 2){
+    if(pack->vno_main < 2){
         for(int i = 0; CPINFO[i].no != -99; ++i)
             if(CPINFO[i].head == 0x0091){
                 CPINFO[i].status = PACK_UNDO; //发送最低版本要求报文
                 break;
             }
     }
+    //test
+    CPINFO[0].status = PACK_UNDO; //发送最低版本要求报文
 
     for(int i = 0; CPINFO[i].no != -99; ++i){
         if(CPINFO[i].head == 0x0191){
@@ -382,38 +353,43 @@ bool unpack_1 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_
 
     return true;
 }
-bool unpack_2 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) 
+bool chkpack_fetch (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-    return true;
-}
-bool unpack_3 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) 
-{
-    return true;
-}
-bool unpack_4 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) 
-{
-    return true;
-}
-bool unpack_5 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
-bool unpack_6 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
-bool unpack_7 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
-bool unpack_8 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
-bool unpack_9 (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
-bool unpack_10(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
-bool unpack_11(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
-bool unpack_12(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
-bool unpack_13(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size) {return true;}
-bool unpack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, u_short pack_size){return true;}
+    u_short head = ((netpack->head).head_index << 8) | ((netpack->head).head_type);
+    printf("[%d] test head in chkpack_fetch if is right : 0x%x\n", getpid(), head);
+    int bno = 0;
+    for(int i = 0; SPINFO[i].no != 99; ++i){
+        if(SPINFO[i].head == head){
+            bno = SPINFO[i].bno;
+            break;
+        }
+    }
 
-
+    if(!bno) return false; //SP中无此 head
+    
+    for(int i = 0; CPINFO[i].no != -99; ++i){
+        if(CPINFO[i].no == bno){
+            CPINFO[i].status = PACK_UNDO;
+            return true;
+        }
+    }
+    return false; //CP中无此 no
+}
+bool chkpack_err (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
+{
+    return true;
+}
+//主接口
 void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 {
     printf("[%d] 当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
     //检查是否需要封包
     for(int i = 0; CPINFO[i].no!=-99; ++i){
         if(CPINFO[i].status == PACK_UNDO){ //需要封包
-            printf("[%d] 检查pack%d\n", getpid(), CPINFO[i].no);
-            if(CPINFO[i].pack_fun(sinfo, SPINFO, CPINFO))
+            NETPACK pack(CPINFO[i].head);
+            //printf("[%d] 检查pack%d\n", getpid(), CPINFO[i].no);
+            //printf("[%d] test 检查netpack.head是否正确 head_type:0x%x head_index:0x%x\n", getpid(), pack.head.head_type, pack.head.head_index);
+            if(CPINFO[i].pack_fun(sinfo, SPINFO, CPINFO, &pack))
                 CPINFO[i].status = PACK_EMPTY; //已成功封包
         }
     }
@@ -450,15 +426,18 @@ void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
     if(sinfo->recvbuf_len < (int)pack_size)
         return; //不完整的包
 
-    printf("[%d] test: head:%d, pack_size:%d, data_size:%d\n", getpid(), head, pack_size, data_size);
-    //若包完整，开始解 i 包
-    if(!SPINFO[i].unpack_fun(sinfo, SPINFO, CPINFO, pack_size))
+    printf("[%d] 解包测试完成: head:%d, pack_size:%d, data_size:%d\n", getpid(), head, pack_size, data_size);
+    
+    //若包完整，开始解包    
+    NETPACK pack;
+    if(!pack.dwload(sinfo, pack_size, data_size))
         return; //解包失败
-    sinfo->recvbuf_len -= (int)pack_size;
-    if(sinfo->recvbuf_len > 0)
-        memmove(sinfo->recvbuf, sinfo->recvbuf + (int)pack_size, sinfo->recvbuf_len);
-    printf("[%d] 解包成功!\n", getpid());
-    printf("[%d] 当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
+    printf("[%d] 解包结束! 当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
+    //解包完成，进行检查与处理
+    if(!SPINFO[i].unpack_fun(sinfo, SPINFO, CPINFO, &pack))
+        return;
+    printf("[%d] 处理包结束!\n", getpid());
+    
     return; //成功
 }
 
@@ -466,37 +445,37 @@ void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 int sub(int devid)
 {
     SEVPACK SERVER_PACK_INFO[] = {
-    {1  ,2 , unpack_1  , 0x0111, "认证请求",        PACK_EMPTY},
-    {2  ,3 , unpack_2  , 0x0211, "取系统信息",      PACK_EMPTY},
-    {3  ,4 , unpack_3  , 0x0311, "取配置信息",      PACK_EMPTY},
-    {4  ,5 , unpack_4  , 0x0411, "取进程信息",      PACK_EMPTY},
-    {5  ,6 , unpack_5  , 0x0511, "取以太口信息",    PACK_EMPTY},
-    {6  ,7 , unpack_6  , 0x0711, "取USB口信息",     PACK_EMPTY},
-    {7  ,8 , unpack_7  , 0x0c11, "取U盘上文件列表信息", PACK_EMPTY},
-    {8  ,9 , unpack_8  , 0x0811, "取打印口信息",    PACK_EMPTY},
-    {9  ,10, unpack_9  , 0x0d11, "取打印队列信息",  PACK_EMPTY},
-    {10 ,11, unpack_10 , 0x0911, "取终端服务信息",  PACK_EMPTY},
-    {11 ,12, unpack_11 , 0x0a11, "取哑终端信息",    PACK_EMPTY},
-    {12 ,13, unpack_12 , 0x0b11, "取IP终端端信息",  PACK_EMPTY},
-    {13 ,0 , unpack_13 , 0xff11, "所有包均收到",    PACK_EMPTY},
-    {-99,0 , unpack_err, 0x0000, "ERR",            PACK_EMPTY}
+    {1  ,2 , chkpack_auth  , 0x0111, "认证请求",        PACK_EMPTY},
+    {2  ,3 , chkpack_fetch , 0x0211, "取系统信息",      PACK_EMPTY},
+    {3  ,4 , chkpack_fetch , 0x0311, "取配置信息",      PACK_EMPTY},
+    {4  ,5 , chkpack_fetch , 0x0411, "取进程信息",      PACK_EMPTY},
+    {5  ,6 , chkpack_fetch , 0x0511, "取以太口信息",    PACK_EMPTY},
+    {6  ,7 , chkpack_fetch , 0x0711, "取USB口信息",     PACK_EMPTY},
+    {7  ,8 , chkpack_fetch , 0x0c11, "取U盘上文件列表信息", PACK_EMPTY},
+    {8  ,9 , chkpack_fetch , 0x0811, "取打印口信息",    PACK_EMPTY},
+    {9  ,10, chkpack_fetch , 0x0d11, "取打印队列信息",  PACK_EMPTY},
+    {10 ,11, chkpack_fetch , 0x0911, "取终端服务信息",  PACK_EMPTY},
+    {11 ,12, chkpack_fetch , 0x0a11, "取哑终端信息",    PACK_EMPTY},
+    {12 ,13, chkpack_fetch , 0x0b11, "取IP终端端信息",  PACK_EMPTY},
+    {13 ,0 , chkpack_err   , 0xff11, "所有包均收到",    PACK_EMPTY},
+    {-99,0 , chkpack_err   , 0x0000, "ERR",            PACK_EMPTY}
     };
     CLTPACK CLIENT_PACK_INFO[] = {
-    {1  ,0 , pack_1 , 0x0091, "发最低版本要求", PACK_EMPTY},
-    {2  ,0 , pack_2 , 0x0191, "发认证串及基本配置信息", PACK_EMPTY},
-    {3  ,0 , pack_3 , 0x0291, "发系统信息", PACK_EMPTY},
-    {4  ,0 , pack_4 , 0x0391, "发配置信息", PACK_EMPTY},
-    {5  ,0 , pack_5 , 0x0491, "发进程信息", PACK_EMPTY},
-    {6  ,0 , pack_6 , 0x0591, "发以太口信息", PACK_EMPTY},
-    {7  ,0 , pack_7 , 0x0791, "发USB口信息", PACK_EMPTY},
-    {8  ,0 , pack_8 , 0x0c91, "发U盘文件列表信息", PACK_EMPTY},
-    {9  ,0 , pack_9 , 0x0891, "发打印口信息", PACK_EMPTY},
-    {10 ,0 , pack_10, 0x0d91, "发打印队列信息", PACK_EMPTY},
-    {11 ,0 , pack_11, 0x0991, "发终端服务信息", PACK_EMPTY},
-    {12 ,0 , pack_12, 0x0a91, "发哑终端信息", PACK_EMPTY},
-    {13 ,0 , pack_13, 0x0b91, "发IP终端信息", PACK_EMPTY},
-    {14 ,0 , pack_14, 0xff91, "所有包均收到", PACK_EMPTY},
-    {-99,0 , pack_err, 0x0000, "ERR", PACK_EMPTY}
+    {1  ,0 , mkpack_vno  , 0x0091, "发最低版本要求", PACK_EMPTY},
+    {2  ,0 , mkpack_auth , 0x0191, "发认证串及基本配置信息", PACK_EMPTY},
+    {3  ,0 , mkpack_err  , 0x0291, "发系统信息", PACK_EMPTY},
+    {4  ,0 , mkpack_err  , 0x0391, "发配置信息", PACK_EMPTY},
+    {5  ,0 , mkpack_err  , 0x0491, "发进程信息", PACK_EMPTY},
+    {6  ,0 , mkpack_err  , 0x0591, "发以太口信息", PACK_EMPTY},
+    {7  ,0 , mkpack_err  , 0x0791, "发USB口信息", PACK_EMPTY},
+    {8  ,0 , mkpack_err  , 0x0c91, "发U盘文件列表信息", PACK_EMPTY},
+    {9  ,0 , mkpack_err  , 0x0891, "发打印口信息", PACK_EMPTY},
+    {10 ,0 , mkpack_err  , 0x0d91, "发打印队列信息", PACK_EMPTY},
+    {11 ,0 , mkpack_err  , 0x0991, "发终端服务信息", PACK_EMPTY},
+    {12 ,0 , mkpack_err  , 0x0a91, "发哑终端信息", PACK_EMPTY},
+    {13 ,0 , mkpack_err  , 0x0b91, "发IP终端信息", PACK_EMPTY},
+    {14 ,0 , mkpack_err  , 0xff91, "所有包均收到", PACK_EMPTY},
+    {-99,0 , mkpack_err  , 0x0000, "ERR", PACK_EMPTY}
     };
     SOCK_INFO sinfo;
     sinfo.devid = devid;

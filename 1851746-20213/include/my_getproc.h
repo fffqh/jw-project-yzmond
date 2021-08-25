@@ -1,7 +1,6 @@
 #ifndef MY_GETPROC_H
 #define MY_GETPROC_H
 #include <stdio.h>
-#include <iostream>
 #include <string>
 #include <string.h>
 #include <fstream>
@@ -46,6 +45,7 @@ public:
             }
         }
         printf("[%d] test proc get ¡¾%s:%s¡¿\n", getpid(), proc_name, info.c_str());
+        fin.close();
         return info;
     }
 };

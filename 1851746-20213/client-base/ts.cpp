@@ -466,14 +466,6 @@ bool mkpack_prn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
     if(!netpack->upload(sinfo))
         return false;
     
-    // if(ntohs(pack.work_num) >0){
-    //     for(int i = 0; CPINFO[i].no!=-99; ++i){
-    //         if(CPINFO[i].head == 0x0d91){
-    //             CPINFO[i].status = PACK_UNDO;
-    //             break;
-    //         }
-    //     }
-    // }
     return true;
 }
 bool mkpack_tty(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)

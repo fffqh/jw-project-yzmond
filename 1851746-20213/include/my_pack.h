@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <ctype.h> //判断可见字符
 #include <sstream> //字符串流对象
+#include <algorithm> //随机数：random_shufft
+#include <vector>
 #include <sys/socket.h>
 
 using namespace std;
@@ -83,7 +85,6 @@ struct CSP_SYSIF{
         freed_memory = htonl(m);
     }
 };
-
 
 struct CSP_VNO{
     u_short vno_main;
@@ -184,6 +185,156 @@ struct CSP_ETHIF{
 
 };
 
+/*
+#include <algorithm>
+#include <iostream>
+#include <vector>
+using namespace std;
+
+void randperm(int Num)
+{
+    vector<int> temp;
+    for (int i = 0; i < Num; ++i)
+    {
+        temp.push_back(i + 1);
+    }
+    random_shuffle(temp.begin(), temp.end());
+    for (int i = 0; i < temp.size(); i++)
+    {
+        cout << temp[i] << " ";
+    }
+}
+cout << endl;
+*/
+
+struct CSP_TTYIF{
+    u_char mtty[16];
+    u_char tty[254];
+    u_short num;
+    CSP_TTYIF(u_int devid, int mindn, int maxdn)
+    {
+        int total = mindn + rand()%( maxdn- mindn + 1 );
+        int async_num = 8*(devid/10%3);
+        int async_term_num = 0;
+        if(async_num){
+            async_term_num = 1 + rand()%async_num;
+        }
+        total = (total >= async_term_num)? total : async_term_num;
+        int ip_term_num = total - async_term_num;
+
+        //init
+        memset(mtty, 0, sizeof(mtty));
+        memset(tty, 0, sizeof(tty));
+        //mtty rand_set
+        vector<int> temp;
+        for(int i = 0; i < async_num; ++i){
+            temp.push_back(i);
+        }
+        random_shuffle(temp.begin(), temp.end());
+        for(int i = 0; i < async_term_num; ++i){
+            mtty[temp[i]] = 1;
+        }
+        //tty rand_set
+        temp.clear();
+        for(int i = 0; i < 254; ++i){
+            temp.push_back(i);
+        }
+        random_shuffle(temp.begin(), temp.end());
+        for(int i = 0; i < ip_term_num; ++i){
+            tty[temp[i]] = 1;
+        }
+        num = htons((u_short)(total + rand()%(270-total + 1)));
+    }
+};
+
+struct CSP_TSNIF{
+    u_char port;
+    u_char sport;
+    u_char live_sno;
+    u_char num_sno;
+    u_int  ttyip;
+    u_char tty_type[12];
+    u_char tty_state[8];
+    CSP_TSNIF(u_char snum, bool isip, u_char ttyid){
+        port =  ttyid;
+        sport = ttyid;
+        num_sno = snum;
+        live_sno = rand()%(snum);
+        
+        memset(tty_type, 0, sizeof(tty_type));
+        memset(tty_state, 0, sizeof(tty_state));
+        
+        if(isip){
+            ttyip = htonl((u_int)192168089000 + ttyid); //192.168.89.x
+            memcpy(tty_type, "IP终端", sizeof("IP终端")); 
+        }else{
+            ttyip = htonl(0);
+            memcpy(tty_type, "串口终端", sizeof("串口终端"));
+        }
+        
+        if(rand()%2){
+            memcpy(tty_state, "正常", sizeof("正常"));
+        }else{
+            memcpy(tty_state, "菜单", sizeof("菜单"));
+        }
+    }
+};
+
+
+struct CSP_SNIF{
+    u_char  snid;
+    u_char  pad1;
+    u_short svr_port;
+    u_int   svr_ip;
+    u_char  sn_pto[12];
+    u_char  sn_state[8];
+    u_char  sn_info[24];
+    u_char  sn_ttyty[12];
+    u_int   tyy_time;
+    u_int   stoty_byte;
+    u_int   rfoty_byte;
+    u_int   stosr_byte;
+    u_int   rfosr_byte;
+    u_int   ping_min;
+    u_int   ping_avg;
+    u_int   ping_max;
+    CSP_SNIF(u_char id, u_short port, u_int ip){
+        const char* PTO[] = {"SSH", "专用SSH", "FTP"};
+        const int PTONUM = 3;
+        const char* STA[] = {"开机", "关机", "已登录"};
+        const int STANUM = 3;
+        const char* SIF[] = {"储蓄系统", "基金开户", "高程作业", "计网作业"};
+        const int SIFNUM = 4;
+        const char* TTY[] = {"vt100", "vt220", "xcode"};
+        const int TTYNUM = 3;
+        
+        int rand_index = 0;
+        snid = id;
+        svr_port = htons(port);
+        svr_ip = htonl(ip);
+
+        rand_index = rand() % PTONUM;
+        memcpy(sn_pto, PTO[rand_index], string(PTO[rand_index]).length());
+        rand_index = rand() % STANUM;
+        memcpy(sn_state, STA[rand_index], string(STA[rand_index]).length());
+        rand_index = rand() % SIFNUM;
+        memcpy(sn_info, SIF[rand_index], string(SIF[rand_index]).length());
+        rand_index = rand() % TTYNUM;
+        memcpy(sn_ttyty, TTY[rand_index], string(TTY[rand_index]).length());
+        time_t t;
+        time(&t);
+        tyy_time = htonl((u_int)(t));
+        stoty_byte = htonl(rand()%10000000);
+        rfoty_byte = htonl(rand()%10000000);
+        stosr_byte = htonl(rand()%10000000);
+        rfosr_byte = htonl(rand()%10000000);
+        ping_min   = htonl(rand()%123456);
+        ping_avg   = htonl(rand()%123456);
+        ping_max   = htonl(rand()%123456);
+    }
+};
+
+
 
 class NETPACK{
 public:
@@ -204,6 +355,13 @@ public:
         head.pad = 0x0000;
         databuf = NULL;
     }
+    NETPACK(u_short head_info, u_short head_pad)
+    {
+        memcpy(&(head.head_type), &head_info, 1);
+        memcpy(&(head.head_index), (u_char*)(&head_info) + 1, 1);
+        head.pad = head_pad;
+        databuf = NULL;
+    }
     /*析构函数*/
     ~NETPACK(){if(databuf) delete databuf;}
 
@@ -218,6 +376,7 @@ public:
         //主机序转网络序
         head.data_size = htons(head.data_size);
         head.pack_size = htons(head.pack_size);
+        head.pad = htons(head.pad);
         //to sendbuf
         memcpy(sinfo->sendbuf + sinfo->sendbuf_len, &head, psize-dsize);
         memcpy(sinfo->sendbuf + sinfo->sendbuf_len + psize-dsize, databuf, dsize);
@@ -235,6 +394,7 @@ public:
         memcpy(&head, sinfo->recvbuf, pack_size - data_size);
         head.pack_size = ntohs(head.pack_size);
         head.data_size = ntohs(head.data_size);
+        head.pad = ntohs(head.pad);
         printf("[%d] 得到报文头 head_type:0x%02x head_index:0x%02x pack_size:%d data_size:%d\n"
                 , getpid(), head.head_type, head.head_index, head.pack_size, head.data_size);
         //得到报文数据

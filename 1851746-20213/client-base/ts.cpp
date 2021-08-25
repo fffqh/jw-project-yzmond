@@ -1,7 +1,6 @@
 /*
-版本 0.1 
-配置信息写死的测试版
-先不管读配置文件的苦力活 w
+版本 0.2
+开始加入配置文件与日志
 */
 
 #include <iostream>
@@ -22,11 +21,11 @@
 #include "../include/my_socket.h"
 #include "../include/my_pack.h"
 #include "../include/my_getproc.h"
+#include "../include/my_getconf.h"
 
 //常量设置
 #define MAX_RECON_TIME  5
 #define MAX_CON_WATIME  25
-
 
 #define PACK_STOP -2  //阻塞等待中
 #define PACK_UNDO -1  //未处理完成
@@ -37,8 +36,9 @@
 #define PROC_DAT_PATH "./process.dat"
 #define USBF_DAT_PATH "./usbfiles.dat"
 
-//自定义结构体
+#define CONF_PATH "./ts.conf"
 
+//自定义结构体
 struct CLTPACK;
 struct SEVPACK;
 struct SEVPACK{
@@ -61,14 +61,14 @@ struct CLTPACK{
 
 //配置参数
 char _conf_ip[16] = "192.168.1.242";
-int  _conf_port = 51746;
-bool _conf_quit = 1;
-int  _conf_mindn = 5;
-int  _conf_maxdn = 28;
-int  _conf_minsn = 3;
-int  _conf_maxsn = 10;
+int  _conf_port   = 41746;
+bool _conf_quit   = 1;
+int  _conf_mindn  = 5;
+int  _conf_maxdn  = 28;
+int  _conf_minsn  = 3;
+int  _conf_maxsn  = 10;
 bool _conf_newlog = 1;
-int  _conf_debug = 111111;
+int  _conf_debug  = 111111;
 int  _conf_dprint = 1;
 //运行参数
 int  _devid;
@@ -90,8 +90,76 @@ bool chk_arg(int argc, char** argv)
 //read_conf: 读取配置文件
 bool read_conf()
 {
-    ;
+    //所有可能存在的配置信息
+    CONF_ITEM conf_item[] = {
+        {CFITEM_NONE, "服务器IP地址", ""},
+        {CFITEM_NONE, "端口号", ""},
+        {CFITEM_NONE, "进程接收成功后退出", ""},
+        {CFITEM_NONE, "最小配置终端数量", ""},
+        {CFITEM_NONE, "最大配置终端数量", ""},
+        {CFITEM_NONE, "每个终端最小虚屏数量", ""},
+        {CFITEM_NONE, "每个终端最大虚屏数量", ""},
+        {CFITEM_NONE, "删除日志文件", ""},
+        {CFITEM_NONE, "DEBUG设置", ""},
+        {CFITEM_NONE, "DEBUG屏幕显示", ""},
+        {CFITEM_NONE, NULL, ""}
+    };
+    CONFINFO conf_info(CONF_PATH, " \t", "#", conf_item);
+    conf_info.getall();
+    //开始格式化全局配置参数
+    for(int i = 0; conf_item[i].name != NULL; ++i){
+        if(conf_item[i].status == CFITEM_NONE){
+            printf("[%d] test read_conf err: can't find [%s]\n", getpid(), conf_item[i].name);
+            continue;
+        }
+        if(!strcmp(conf_item[i].name,"服务器IP地址")){
+            memcpy(_conf_ip,conf_item[i].data.c_str(),sizeof(_conf_ip));
+        }else if(!strcmp(conf_item[i].name,"端口号")){
+            _conf_port = atoi(conf_item[i].data.c_str());
+        }else if(!strcmp(conf_item[i].name,"进程接收成功后退出")){
+            _conf_quit = !!atoi(conf_item[i].data.c_str());
+        }else if(!strcmp(conf_item[i].name,"最小配置终端数量")){
+            _conf_mindn = atoi(conf_item[i].data.c_str());
+            if(_conf_mindn < 3 || _conf_mindn > 10)
+                _conf_mindn = 6;
+        }else if(!strcmp(conf_item[i].name,"最大配置终端数量")){
+            _conf_maxdn = atoi(conf_item[i].data.c_str());
+            if(_conf_maxdn < 10 || _conf_maxdn > 50)
+                _conf_maxdn = 28;
+        }else if(!strcmp(conf_item[i].name,"每个终端最小虚屏数量")){
+            _conf_minsn = atoi(conf_item[i].data.c_str());
+            if(_conf_minsn < 1 || _conf_minsn > 3)
+                _conf_minsn = 3;
+        }else if(!strcmp(conf_item[i].name,"每个终端最大虚屏数量")){
+            _conf_maxsn = atoi(conf_item[i].data.c_str());
+            if(_conf_minsn < 4 || _conf_minsn > 16)
+                _conf_minsn = 10;
+        }else if(!strcmp(conf_item[i].name,"删除日志文件")){
+            _conf_newlog = !!atoi(conf_item[i].data.c_str());
+        }else if(!strcmp(conf_item[i].name,"DEBUG设置")){
+            _conf_debug = atoi(conf_item[i].data.c_str());
+        }else if(!strcmp(conf_item[i].name,"DEBUG屏幕显示")){
+            _conf_dprint= atoi(conf_item[i].data.c_str());
+        }
+    }
     return true;
+}
+//print_conf: 打印配置参数
+void print_conf()
+{
+    printf("[%d] =========== 打印所有配置参数 ==========\n", getpid());
+    printf("_conf_ip = %s\n", _conf_ip);
+    printf("_conf_port   = %d\n",  _conf_port  );
+    printf("_conf_quit   = %d\n",  _conf_quit  );
+    printf("_conf_mindn  = %d\n",  _conf_mindn );
+    printf("_conf_maxdn  = %d\n",  _conf_maxdn );
+    printf("_conf_minsn  = %d\n",  _conf_minsn );
+    printf("_conf_maxsn  = %d\n",  _conf_maxsn );
+    printf("_conf_newlog = %d\n",  _conf_newlog);
+    printf("_conf_debug  = %d\n",  _conf_debug );
+    printf("_conf_dprint = %d\n",  _conf_dprint);
+    printf("=========================================\n");
+    return;
 }
 
 /** 父进程信号处理 **/
@@ -440,15 +508,6 @@ bool mkpack_usb(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
     memcpy(netpack->databuf, &pack, sizeof(pack));
     if(!netpack->upload(sinfo))
         return false;
-
-    // if(pack.is_usb){
-    //     for(int i = 0; CPINFO[i].no!=-99; ++i){
-    //         if(CPINFO[i].head == 0x0c91){
-    //             CPINFO[i].status = PACK_UNDO;
-    //             break;
-    //         }
-    //     }
-    // }
     return true;
 }
 bool mkpack_prn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
@@ -470,13 +529,11 @@ bool mkpack_prn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
 }
 bool mkpack_tty(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-
+    return true;
 }
-
 
 bool mkpack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-
     return true;
 }
 
@@ -751,6 +808,8 @@ int main(int argc, char** argv)
     if(!read_conf()){//读取配置文件并取得配置参数 _conf_*
         return 0;
     }
+    //test
+    print_conf();
     //注册信号
     set_signal_catch();
 

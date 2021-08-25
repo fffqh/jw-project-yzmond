@@ -1,11 +1,12 @@
-#ifndef MY_SOCKET_H
-#define MY_SOCKET_H
+#ifndef MY_GETCONF_H
+#define MY_GETCONF_H
 
 #include <stdio.h>
 #include <string>
 #include <string.h>
 #include <fstream>
-//#include <sys/socket.h>
+#include <sstream>
+#include <sys/socket.h>
 using namespace std;
 
 #define CFITEM_NONE -1
@@ -38,8 +39,8 @@ public:
         ifstream fin;
         fin.open(conf_path, ios::in);
         if(!fin.is_open()){
-            // printf("[%d] getall conf failed！文件打开失败（%s）\n", 
-            //                                 getpid(), conf_path);
+            printf("[%d] getall conf failed！文件打开失败（%s）\n", 
+                                            getpid(), conf_path);
             return -1; //文件打开失败
         }
         string buf;
@@ -62,10 +63,10 @@ public:
                 buf = buf.substr(name_st, name_sz);
                 //是否存在分割符
                 int k = 0;
-                for(k = 0; k < dlim_mark.length(); ++k)
+                for(k = 0; k < (int)dlim_mark.length(); ++k)
                     if((buf.find(dlim_mark[k])) != buf.npos)
                         break;
-                if(k == dlim_mark.length())
+                if(k == (int)dlim_mark.length())
                     continue;//no dlim
                 //该 name 的状态检查
                 if(!rewrite && conf_item[i].status == CFITEM_FIND)
@@ -73,7 +74,9 @@ public:
                 //取内容
                 int data_st = buf.find(dlim_mark[k]);
                 int data_sz = buf.length() - data_st - 1;
-                conf_item[i].data = buf.substr(data_st+1, data_sz);
+                string bufstring = buf.substr(data_st+1, data_sz);
+                istringstream datastring(bufstring);
+                datastring >> conf_item[i].data;
                 conf_item[i].status = CFITEM_FIND;
                 getnum+=1;
             }////循环所有
@@ -88,8 +91,8 @@ public:
         ifstream fin;
         fin.open(conf_path, ios::in);
         if(!fin.is_open()){
-            // printf("[%d] get conf failed！文件打开失败（%s）\n", 
-            //                                 getpid(), conf_path);
+            printf("[%d] get conf failed！文件打开失败（%s）\n", 
+                                            getpid(), conf_path);
             return ""; //文件打开失败
         }
         string buf;
@@ -109,10 +112,10 @@ public:
             buf = buf.substr(name_st, name_sz);
             //是否存在分割符
             int k = 0;
-            for(k = 0; k < dlim_mark.length(); ++k)
+            for(k = 0; k < (int)dlim_mark.length(); ++k)
                 if((buf.find(dlim_mark[k])) != buf.npos)
                     break;
-            if(k == dlim_mark.length())
+            if(k == (int)dlim_mark.length())
                 continue;//no dlim
             //取内容
             int data_st = buf.find(dlim_mark[k]);

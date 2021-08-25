@@ -35,7 +35,7 @@
 
 #define CONF_DAT_PATH "./config.dat"
 #define PROC_DAT_PATH "./process.dat"
-#define USBF_DAT_PATH "./usefiles.dat"
+#define USBF_DAT_PATH "./usbfiles.dat"
 
 //自定义结构体
 
@@ -51,7 +51,7 @@ struct SEVPACK{
 };
 struct CLTPACK{
     const int       no;
-    const int       bno;
+    int             bno; //包类型
     bool (*pack_fun)(SOCK_INFO*, SEVPACK*, CLTPACK*, NETPACK*); //封包函数
     const u_short   head;
     const char      *str;
@@ -343,6 +343,8 @@ bool mkpack_sysif(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* n
 }
 bool mkpack_str(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
+    printf("[%d] 封包pack_str\n", getpid());   
+
     int max_size = 8191;
     FILE * fp = NULL;
     if(netpack->head.head_index == 0x03){
@@ -386,10 +388,48 @@ bool mkpack_str(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
 }
 bool mkpack_eth(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-    return true;
+    printf("[%d] 封包pack_eth\n", getpid());   
+
+    int i = 0;
+    for(i = 0; CPINFO[i].no != -99; ++i)
+        if(CPINFO[i].head == 0x0591)
+            break;
+    if(!i || CPINFO[i].no == -99)
+        return false;
+    
+    u_short head_pad;
+
+    while(1){
+        if(((u_short)CPINFO[i].bno) & 0x0001)
+            head_pad = 0x0000;
+        else if(((u_short)CPINFO[i].bno) & 0x0002)
+            head_pad = 0x0001;
+        else
+            break;
+        
+        printf("[%d] test in mkpack_eth 当前封包head_pad=0x%x", getpid(), head_pad);
+        netpack->head.pad = htons(head_pad);
+        CSP_ETHIF pack(head_pad, sinfo->devid);
+        if(!netpack->mk_databuf(sizeof(CSP_ETHIF)))
+            return false;
+        netpack->head.data_size = sizeof(CSP_ETHIF);
+        netpack->head.pack_size = 8 + sizeof(CSP_ETHIF);
+        memcpy(netpack->databuf, &pack, sizeof(pack));
+        if(!netpack->upload(sinfo))
+            return false;
+
+        if(head_pad == 0x0000)
+            CPINFO[i].bno &= 0xFFFE;
+        else if(head_pad == 0x0001)
+            CPINFO[i].bno &= 0xFFFD;
+
+    }
+    return true;        
 }
 bool mkpack_usb(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
+    printf("[%d] 封包pack_usb\n", getpid());   
+
     if(SEND_BUFSIZE - sinfo->sendbuf_len < 8+(int)sizeof(CSP_USBIF))
         return false;
     CSP_USBIF pack(sinfo->devid);
@@ -401,18 +441,20 @@ bool mkpack_usb(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
     if(!netpack->upload(sinfo))
         return false;
 
-    if(pack.is_usb){
-        for(int i = 0; CLTPACK[i].no!=-99; ++i){
-            if(CLTPACK[i].head == 0x0c91){
-                CLTPACK[i].status = PACK_UNDO;
-                break;
-            }
-        }
-    }
+    // if(pack.is_usb){
+    //     for(int i = 0; CPINFO[i].no!=-99; ++i){
+    //         if(CPINFO[i].head == 0x0c91){
+    //             CPINFO[i].status = PACK_UNDO;
+    //             break;
+    //         }
+    //     }
+    // }
     return true;
 }
 bool mkpack_prn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
+    printf("[%d] 封包pack_prn\n", getpid());   
+
     if(SEND_BUFSIZE - sinfo->sendbuf_len < 8+(int)sizeof(CSP_PRNIF))
         return false;
     CSP_PRNIF pack(sinfo->devid);
@@ -424,22 +466,28 @@ bool mkpack_prn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
     if(!netpack->upload(sinfo))
         return false;
     
-    if(ntohs(pack.work_num) >0){
-        for(int i = 0; CLTPACK[i].no!=-99; ++i){
-            if(CLTPACK[i].head == 0x0d91){
-                CLTPACK[i].status = PACK_UNDO;
-                break;
-            }
-        }
-    }
+    // if(ntohs(pack.work_num) >0){
+    //     for(int i = 0; CPINFO[i].no!=-99; ++i){
+    //         if(CPINFO[i].head == 0x0d91){
+    //             CPINFO[i].status = PACK_UNDO;
+    //             break;
+    //         }
+    //     }
+    // }
     return true;
+}
+bool mkpack_tty(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
+{
+
 }
 
 
 bool mkpack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
+
     return true;
 }
+
 bool chkpack_auth (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
     SCP_AUTH * pack = (SCP_AUTH*) netpack->databuf;
@@ -505,10 +553,36 @@ bool chkpack_fetch (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK*
     }
     return false; //CP中无此 no
 }
+bool chkpack_fchn (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
+{
+    u_short head = ((netpack->head).head_index << 8) | ((netpack->head).head_type);
+    u_short head_pad = (netpack->head).pad;
+    int bno = 0;
+    for(int i = 0; SPINFO[i].no != 99; ++i){
+        if(SPINFO[i].head == head){
+            bno = SPINFO[i].bno;
+            break;
+        }
+    }
+    if(!bno) return false; //SP中无此 head
+    for(int i = 0; CPINFO[i].no != -99; ++i){
+        if(CPINFO[i].no == bno){
+            CPINFO[i].status = PACK_UNDO;
+            if(head_pad == 0x0000)
+                CPINFO[i].bno |= 0x0001;
+            if(head_pad == 0x0001)
+                CPINFO[i].bno |= 0x0002;
+            
+            return true;
+        }
+    }
+    return false; //CP中无此 no
+}
 bool chkpack_err (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
     return true;
 }
+
 //主接口
 void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 {
@@ -528,47 +602,49 @@ void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 }
 void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 {
-    printf("[%d] （unpack检查前）当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
-    //判断是否进行解包：recvbuf_len大于最小包大小（只含报文头）
-    if(sinfo->recvbuf_len < 8)
-        return;
+    while(1){
+        printf("[%d] （unpack检查前）当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
+        //判断是否进行解包：recvbuf_len大于最小包大小（只含报文头）
+        if(sinfo->recvbuf_len < 8)
+            return;
 
-    //判断包类型，并确定是否解包
-    int p = 0;
-    u_short head;
-    memcpy(&head, sinfo->recvbuf, 2);
-    p+=2;
-    int i;
-    for(i = 0; SPINFO[i].no != -99; ++i)
-        if(head == SPINFO[i].head)
-            break;
-    if(SPINFO[i].no == -99) //非法包，退出
-        return;
-    
-    u_short pack_size;
-    u_short data_size;
-    memcpy(&pack_size, sinfo->recvbuf + p, 2);
-    p += 4;
-    memcpy(&data_size, sinfo->recvbuf + p, 2);
-    p += 2;
-    pack_size = ntohs(pack_size);
-    data_size = ntohs(data_size);
-    if(sinfo->recvbuf_len < (int)pack_size)
-        return; //不完整的包
+        //判断包类型，并确定是否解包
+        int p = 0;
+        u_short head;
+        memcpy(&head, sinfo->recvbuf, 2);
+        p+=2;
+        int i;
+        for(i = 0; SPINFO[i].no != -99; ++i)
+            if(head == SPINFO[i].head)
+                break;
+        if(SPINFO[i].no == -99) //非法包，退出
+            return;
+        
+        u_short pack_size;
+        u_short data_size;
+        memcpy(&pack_size, sinfo->recvbuf + p, 2);
+        p += 4;
+        memcpy(&data_size, sinfo->recvbuf + p, 2);
+        p += 2;
+        pack_size = ntohs(pack_size);
+        data_size = ntohs(data_size);
+        if(sinfo->recvbuf_len < (int)pack_size)
+            return; //不完整的包
 
-    printf("[%d] 解包测试完成: head:%d, pack_size:%d, data_size:%d\n", getpid(), head, pack_size, data_size);
+        printf("[%d] 解包测试完成: head:0x%x, pack_size:%d, data_size:%d\n", getpid(), head, pack_size, data_size);
+        
+        //若包完整，开始解包    
+        NETPACK pack;
+        if(!pack.dwload(sinfo, pack_size, data_size))
+            return; //解包失败
+        printf("[%d] 解包结束! 当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
+        //解包完成，进行检查与处理
+        if(!SPINFO[i].unpack_fun(sinfo, SPINFO, CPINFO, &pack))
+            return;
+        printf("[%d] 处理包结束!\n", getpid());
     
-    //若包完整，开始解包    
-    NETPACK pack;
-    if(!pack.dwload(sinfo, pack_size, data_size))
-        return; //解包失败
-    printf("[%d] 解包结束! 当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
-    //解包完成，进行检查与处理
-    if(!SPINFO[i].unpack_fun(sinfo, SPINFO, CPINFO, &pack))
-        return;
-    printf("[%d] 处理包结束!\n", getpid());
-    
-    return; //成功
+    }
+    return; //不可能的成功
 }
 
 //与Server通信：devid子进程
@@ -579,7 +655,7 @@ int sub(int devid)
     {2  ,3 , chkpack_fetch , 0x0211, "取系统信息",      PACK_EMPTY},
     {3  ,4 , chkpack_fetch , 0x0311, "取配置信息",      PACK_EMPTY},
     {4  ,5 , chkpack_fetch , 0x0411, "取进程信息",      PACK_EMPTY},
-    {5  ,6 , chkpack_fetch , 0x0511, "取以太口信息",    PACK_EMPTY},
+    {5  ,6 , chkpack_fchn  , 0x0511, "取以太口信息",    PACK_EMPTY},
     {6  ,7 , chkpack_fetch , 0x0711, "取USB口信息",     PACK_EMPTY},
     {7  ,8 , chkpack_fetch , 0x0c11, "取U盘上文件列表信息", PACK_EMPTY},
     {8  ,9 , chkpack_fetch , 0x0811, "取打印口信息",    PACK_EMPTY},
@@ -596,7 +672,7 @@ int sub(int devid)
     {3  ,0 , mkpack_sysif, 0x0291, "发系统信息", PACK_EMPTY},
     {4  ,0 , mkpack_str  , 0x0391, "发配置信息", PACK_EMPTY},
     {5  ,0 , mkpack_str  , 0x0491, "发进程信息", PACK_EMPTY},
-    {6  ,0 , mkpack_err  , 0x0591, "发以太口信息", PACK_EMPTY},
+    {6  ,2 , mkpack_eth  , 0x0591, "发以太口信息", PACK_EMPTY},
     {7  ,0 , mkpack_usb  , 0x0791, "发USB口信息", PACK_EMPTY},
     {8  ,0 , mkpack_str  , 0x0c91, "发U盘文件列表信息", PACK_EMPTY},
     {9  ,0 , mkpack_prn  , 0x0891, "发打印口信息", PACK_EMPTY},
@@ -633,11 +709,12 @@ int sub(int devid)
         if(sinfo.sendbuf_len > 0) //写缓冲区有内容时，置写fd
             FD_SET(sinfo.sockfd, &wfd_set);
         //test
-        //printf("[%d] test wfd:%d\n", getpid(), FD_ISSET(sinfo.sockfd, &wfd_set));
+        printf("[%d] test wfd:%d\n", getpid(), FD_ISSET(sinfo.sockfd, &wfd_set));
+        printf("[%d] test rfd:%d\n", getpid(), FD_ISSET(sinfo.sockfd, &rfd_set));
 
         maxfd = sinfo.sockfd + 1;
         sel = select(maxfd, &rfd_set, &wfd_set, NULL, NULL/*暂时为无限长的等待时间*/);
-        printf("[%d] test select 返回 --- --- --- --- --- ---\n", getpid());
+        printf("[%d] --- --- --- --- test select 返回 --- --- --- --- --- ---\n", getpid());
         //读
         if( sel>0 && FD_ISSET(sinfo.sockfd, &rfd_set)){
             len = recv(sinfo.sockfd, sinfo.recvbuf + sinfo.recvbuf_len, 

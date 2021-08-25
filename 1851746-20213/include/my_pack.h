@@ -4,11 +4,13 @@
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h> //判断可见字符
+#include <sstream> //字符串流对象
 #include <sys/socket.h>
 
 using namespace std;
 
 #include "my_socket.h"
+#include "my_getproc.h"
 
 // __HEAD_PACK
 // +-----------+------------+----------------------+
@@ -107,7 +109,7 @@ struct CSP_USBIF{
 struct CSP_PRNIF{
     u_char is_live; u_char pad1; 
     u_short work_num;
-    u_char name[12];
+    u_char name[32];
     CSP_PRNIF(u_int devid){
         is_live = (u_char)((devid/10) %2);
         if(is_live){
@@ -115,9 +117,73 @@ struct CSP_PRNIF{
         }else{
             work_num = htons(0);
         }
+        memset(name, 0, sizeof(name));
         memcpy(name, "PRN-fqh-1746", 12);
     }
-}
+};
+
+struct CSP_ETHIF{
+    u_char is_live;  u_char is_set;  u_char UpOrDw; u_char pad1;
+    u_char mac[6]; u_short options;
+    u_int  ipaddr, mask;
+    u_int  ipaddr_1, mask_1;
+    u_int  ipaddr_2, mask_2;
+    u_int  ipaddr_3, mask_3;
+    u_int  ipaddr_4, mask_4;
+    u_int  ipaddr_5, mask_5;
+    u_int  stat_data[16]; //recv + send
+
+    CSP_ETHIF(u_short hpad, u_int devid)
+    {
+        is_live = 1;
+        is_set  = 1;
+        UpOrDw  = 1;
+        // 00:01:6C:06:A6:xx
+        mac[0] = 0x00;
+        mac[1] = 0x01;
+        mac[2] = 0x6c;
+        mac[3] = 0x06;
+        mac[4] = 0xa6;
+        mac[5] = devid%100;
+        // 100MB + 全双工 + 自动协商
+        options = htons(0x0007); 
+        // ip + mask
+        ipaddr = htonl((((u_int)(devid%100)*1000 + 168)*1000 + 89)*1000 + 99);
+        ipaddr_1 = htonl((((u_int)(devid%100)*1000 + 168)*1000 + 89)*1000 + 1);
+        ipaddr_2 = htonl((((u_int)(devid%100)*1000 + 168)*1000 + 89)*1000 + 2);
+        ipaddr_3 = htonl((((u_int)(devid%100)*1000 + 168)*1000 + 89)*1000 + 3);
+        ipaddr_4 = htonl((((u_int)(devid%100)*1000 + 168)*1000 + 89)*1000 + 4);
+        ipaddr_5 = htonl((((u_int)(devid%100)*1000 + 168)*1000 + 89)*1000 + 5);
+        mask = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
+        mask_1 = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
+        mask_2 = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
+        mask_3 = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
+        mask_4 = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
+        mask_5 = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
+        
+        char proc_name[6] = {0};
+        if(hpad == 0x0000){
+            memcpy(proc_name, "ens32", 5);
+        }else if(hpad == 0x0001){
+            memcpy(proc_name, "lo", 2);
+        }else{
+            printf("[%d] Create CSP_ETHIF failed！非法的pad_head！\n", getpid());
+            return;
+        }
+        //recv+send
+        PROCINFO pinfo("/proc/net/dev", proc_name);
+        string eth_info = pinfo.get();
+        istringstream info(eth_info);
+        u_int d;
+        for(int i = 0; i < 16; ++i){
+            info >> d;
+            stat_data[i] = htonl(d);
+        }
+
+    }
+
+};
+
 
 class NETPACK{
 public:
@@ -156,6 +222,8 @@ public:
         memcpy(sinfo->sendbuf + sinfo->sendbuf_len, &head, psize-dsize);
         memcpy(sinfo->sendbuf + sinfo->sendbuf_len + psize-dsize, databuf, dsize);
         sinfo->sendbuf_len += psize;
+        //to_log
+        data_tolog("./client_send.log",dsize);
         return true;
     }
     //卸载包
@@ -183,7 +251,7 @@ public:
         if(sinfo->recvbuf_len > 0)
             memmove(sinfo->recvbuf, sinfo->recvbuf + pack_size, sinfo->recvbuf_len);
         //to_log
-        data_tolog("./client_data.log", data_size);
+        data_tolog("./client_recv.log", data_size);
         return true;
     }
     //申请包空间
@@ -199,7 +267,10 @@ public:
 
         return true;
     }
-
+    void set_headpad(u_short pad)
+    {
+        head.pad = pad;
+    }
 private:
     void data_tolog(string log_path, int data_size)
     {

@@ -1,3 +1,5 @@
+#ifndef MY_GETPROC_H
+#define MY_GETPROC_H
 #include <stdio.h>
 #include <iostream>
 #include <string>
@@ -32,7 +34,8 @@ public:
         {
             if(buf.find(proc_name)!=buf.npos){ //’“µΩ
                 int st;
-                if(st = buf.find(":") != buf.npos){
+                if((buf.find(":")) != buf.npos){
+                    st = buf.find(":");
                     int size = buf.length() - st -1;
                     info = buf.substr(st + 1, size);
                 }
@@ -46,3 +49,5 @@ public:
         return info;
     }
 };
+
+#endif

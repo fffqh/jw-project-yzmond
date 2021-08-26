@@ -12,7 +12,7 @@
 #include <signal.h>
 #include <sstream>
 #include <string>
-#include <vector>
+#include <stack>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -46,6 +46,12 @@ using namespace std;
 //自定义结构体
 struct CLTPACK;
 struct SEVPACK;
+
+struct HPADINFO{
+    u_short head_pad;
+    HPADINFO* next;
+};
+
 struct SEVPACK{
     const int       no;
     const int       bno; //0表示无需回复
@@ -55,14 +61,14 @@ struct SEVPACK{
     int             status;
 };
 struct CLTPACK{
-    const int       no;
-    int             bno; //包类型
+    const int        no;
+    const int        ispad;
+    HPADINFO*        hpif;//待发送包序列的head_pad
     bool (*pack_fun)(SOCK_INFO*, SEVPACK*, CLTPACK*, NETPACK*); //封包函数
-    const u_short   head;
+    const u_short    head;
     const char      *str;
-    int             status;
+    int              status;
 };
-
 
 //配置参数
 char _conf_ip[16] = "192.168.1.242";
@@ -137,8 +143,8 @@ bool read_conf()
                 _conf_minsn = 3;
         }else if(!strcmp(conf_item[i].name,"每个终端最大虚屏数量")){
             _conf_maxsn = atoi(conf_item[i].data.c_str());
-            if(_conf_minsn < 4 || _conf_minsn > 16)
-                _conf_minsn = 10;
+            if(_conf_maxsn < 4 || _conf_maxsn > 16)
+                _conf_maxsn = 10;
         }else if(!strcmp(conf_item[i].name,"删除日志文件")){
             _conf_newlog = !!atoi(conf_item[i].data.c_str());
         }else if(!strcmp(conf_item[i].name,"DEBUG设置")){
@@ -463,41 +469,39 @@ bool mkpack_eth(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
 {
     printf("[%d] 封包pack_eth\n", getpid());   
 
-    int i = 0;
+    int i = 0;//当前包的 pos
     for(i = 0; CPINFO[i].no != -99; ++i)
         if(CPINFO[i].head == 0x0591)
             break;
     if(!i || CPINFO[i].no == -99)
-        return false;
-    
-    u_short head_pad;
-
+        return false;//为找到当前包
     while(1){
-        if(((u_short)CPINFO[i].bno) & 0x0001)
-            head_pad = 0x0000;
-        else if(((u_short)CPINFO[i].bno) & 0x0002)
-            head_pad = 0x0001;
-        else
-            break;
+        //检查空间是否足够
+        if(SEND_BUFSIZE-sinfo->sendbuf_len < 8 + sizeof(CSP_ETHIF))
+            return false;
+        //取得当前的包头pad
+        netpack->head.pad = CPINFO[i].hpif->head_pad;
         
-        printf("[%d] test in mkpack_eth 当前封包head_pad=0x%x", getpid(), head_pad);
-        netpack->head.pad = htons(head_pad);
-        CSP_ETHIF pack(head_pad, sinfo->devid);
+        printf("[%d] test in mkpack_eth 当前封包head_pad=0x%x", getpid(), netpack->head.pad);
+        //取得包数据
+        CSP_ETHIF pack(netpack->head.pad, sinfo->devid);
         if(!netpack->mk_databuf(sizeof(CSP_ETHIF)))
             return false;
         netpack->head.data_size = sizeof(CSP_ETHIF);
         netpack->head.pack_size = 8 + sizeof(CSP_ETHIF);
         memcpy(netpack->databuf, &pack, sizeof(pack));
+        //上传包至 sendbuf
         if(!netpack->upload(sinfo))
             return false;
-
-        if(head_pad == 0x0000)
-            CPINFO[i].bno &= 0xFFFE;
-        else if(head_pad == 0x0001)
-            CPINFO[i].bno &= 0xFFFD;
-
+        //hpif 后移
+        HPADINFO* hp = CPINFO[i].hpif;
+        CPINFO[i].hpif = CPINFO[i].hpif->next;
+        delete hp;
+        //检查是否需要继续 mkpack
+        if(!CPINFO[i].hpif)
+            break;
     }
-    return true;        
+    return true;      
 }
 bool mkpack_usb(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
@@ -548,77 +552,121 @@ bool mkpack_tty(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
     return true;
 }
 bool mkpack_mtsn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
-{   //不定长的包
+{
     printf("[%d] 封包pack_mtsn\n", getpid());   
-    //得到 ttyid
-    u_char ttyid = (u_char)(netpack->head.pad);
-    //计算 screen_num
-    u_char snum = _conf_minsn + rand()%(_conf_maxsn-_conf_minsn + 1);
-    CSP_TSNIF pack(snum, 0, ttyid);
-
-    //得到虚屏报文    
-    int data_size = sizeof(CSP_TSNIF) + snum*sizeof(CSP_SNIF);
-    if(SEND_BUFSIZE - sinfo->sendbuf_len < 8 + data_size)
-        return false;
-    if(!netpack->mk_databuf(data_size))
-        return false;
-    
-    //终端信息包装入
-    int databuf_p = 0;
-    memcpy(netpack->databuf, &pack, sizeof(pack));
-    databuf_p += sizeof(pack);
-    //得到ip
-    unsigned int d1,d2,d3,d4;
-    sscanf(_conf_ip, "%u.%u.%u.%u", &d4, &d3, &d2, &d1);
-    printf("[%d] test _conf_ip 转点分十进制ip d4=%u, d3=%u, d2=%u, d1=%u", getpid(), d4,d3,d2,d1);
-    u_int ip = ((d4*1000+d3)*1000+d2)*1000+d1;
-    //虚屏包装入
-    for(int i = 0; i < (int)snum; ++i){
-        CSP_SNIF snpack((u_char)i, (u_short)_conf_port, ip);
-        memcpy(netpack->databuf+databuf_p, &snpack, sizeof(snpack));
-        databuf_p+=sizeof(snpack);
+    int i = 0;//当前包的 pos
+    for(i = 0; CPINFO[i].no != -99; ++i)
+        if(CPINFO[i].head == 0x0a91)
+            break;
+    if(!i || CPINFO[i].no == -99)
+        return false;//未找到当前包
+    while(1){
+        //得到 ttyid
+        netpack->head.pad = (CPINFO[i].hpif)->head_pad;
+        u_char ttyid = (u_char)(netpack->head.pad);
+        //计算 screen_num
+        u_char snum = _conf_minsn + rand()%(_conf_maxsn-_conf_minsn + 1);
+        printf("[!!!] snum=%d\n", snum);
+        //判读缓冲区是否足够
+        int data_size = sizeof(CSP_TSNIF) + snum*sizeof(CSP_SNIF);
+        if(SEND_BUFSIZE - sinfo->sendbuf_len < 8 + data_size)
+            return false;
+        if(!netpack->mk_databuf(data_size))
+            return false;
+        netpack->head.data_size = (u_short)data_size;
+        netpack->head.pack_size = 8 + (u_short)data_size;
+        //终端信息包装入
+        CSP_TSNIF pack(snum, 0, ttyid);
+        int databuf_p = 0;
+        memcpy(netpack->databuf, &pack, sizeof(pack));
+        databuf_p += sizeof(pack);
+        //得到ip
+        unsigned int d1,d2,d3,d4;
+        sscanf(_conf_ip, "%u.%u.%u.%u", &d4, &d3, &d2, &d1);
+        printf("[%d] test _conf_ip 转点分十进制ip d4=%u, d3=%u, d2=%u, d1=%u\n", getpid(), d4,d3,d2,d1);
+        u_int ip = ((d4*1000+d3)*1000+d2)*1000+d1;
+        //虚屏包装入
+        for(int i = 0; i < (int)snum; ++i){
+            CSP_SNIF snpack((u_char)(i+1), (u_short)_conf_port, ip);
+            memcpy(netpack->databuf+databuf_p, &snpack, sizeof(snpack));
+            databuf_p+=sizeof(snpack);
+        }
+        if(!netpack->upload(sinfo))
+            return false;
+        //hpif后移
+        HPADINFO* hp = CPINFO[i].hpif;
+        CPINFO[i].hpif = CPINFO[i].hpif->next;
+        delete hp;
+        //检查是否需要继续 mkpack
+        if(!CPINFO[i].hpif)
+            break;
     }
-    if(!netpack->upload(sinfo))
-        return false;
     return true;    
 }
 bool mkpack_itsn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {   //不定长的包
     printf("[%d] 封包pack_itsn\n", getpid());   
-    //得到 ttyid
-    u_char ttyid = (u_char)(netpack->head.pad);
-    //计算 screen_num
-    u_char snum = _conf_minsn + rand()%(_conf_maxsn-_conf_minsn + 1);
-    CSP_TSNIF pack(snum, 1, ttyid);
-
-    //得到虚屏报文    
-    int data_size = sizeof(CSP_TSNIF) + snum*sizeof(CSP_SNIF);
-    if(SEND_BUFSIZE - sinfo->sendbuf_len < 8 + data_size)
-        return false;
-    if(!netpack->mk_databuf(data_size))
-        return false;
-    
-    //终端信息包装入
-    int databuf_p = 0;
-    memcpy(netpack->databuf, &pack, sizeof(pack));
-    databuf_p += sizeof(pack);
-    //得到ip
-    unsigned int d1,d2,d3,d4;
-    sscanf(_conf_ip, "%u.%u.%u.%u", &d4, &d3, &d2, &d1);
-    printf("[%d] test _conf_ip 转点分十进制ip d4=%u, d3=%u, d2=%u, d1=%u", getpid(), d4,d3,d2,d1);
-    u_int ip = ((d4*1000+d3)*1000+d2)*1000+d1;
-    //虚屏包装入
-    for(int i = 0; i < (int)snum; ++i){
-        CSP_SNIF snpack((u_char)i, (u_short)_conf_port, ip);
-        memcpy(netpack->databuf+databuf_p, &snpack, sizeof(snpack));
-        databuf_p+=sizeof(snpack);
+    int i = 0;//当前包的 pos
+    for(i = 0; CPINFO[i].no != -99; ++i)
+        if(CPINFO[i].head == 0x0b91)
+            break;
+    if(!i || CPINFO[i].no == -99)
+        return false;//未找到当前包
+    while(1){
+        //得到 ttyid
+        netpack->head.pad = (CPINFO[i].hpif)->head_pad;
+        u_char ttyid = (u_char)(netpack->head.pad);
+        //计算 screen_num
+        u_char snum = _conf_minsn + rand()%(_conf_maxsn-_conf_minsn + 1);
+        printf("[!!!] snum=%d\n", snum);
+        //判读缓冲区是否足够
+        int data_size = sizeof(CSP_TSNIF) + snum*sizeof(CSP_SNIF);
+        if(SEND_BUFSIZE - sinfo->sendbuf_len < 8 + data_size)
+            return false;
+        if(!netpack->mk_databuf(data_size))
+            return false;
+        netpack->head.data_size = (u_short)data_size;
+        netpack->head.pack_size = 8 + (u_short)data_size;
+        //终端信息包装入
+        CSP_TSNIF pack(snum, 1, ttyid);
+        int databuf_p = 0;
+        memcpy(netpack->databuf, &pack, sizeof(pack));
+        databuf_p += sizeof(pack);
+        //得到ip
+        unsigned int d1,d2,d3,d4;
+        sscanf(_conf_ip, "%u.%u.%u.%u", &d4, &d3, &d2, &d1);
+        printf("[%d] test _conf_ip 转点分十进制ip d4=%u, d3=%u, d2=%u, d1=%u\n", getpid(), d4,d3,d2,d1);
+        u_int ip = ((d4*1000+d3)*1000+d2)*1000+d1;
+        //虚屏包装入
+        for(int i = 0; i < (int)snum; ++i){
+            CSP_SNIF snpack((u_char)(i+1), (u_short)_conf_port, ip);
+            memcpy(netpack->databuf+databuf_p, &snpack, sizeof(snpack));
+            databuf_p+=sizeof(snpack);
+        }
+        if(!netpack->upload(sinfo))
+            return false;
+        //hpif后移
+        HPADINFO* hp = CPINFO[i].hpif;
+        CPINFO[i].hpif = CPINFO[i].hpif->next;
+        delete hp;
+        //检查是否需要继续 mkpack
+        if(!CPINFO[i].hpif)
+            break;
     }
+    return true;   
+}
+bool mkpack_done(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
+{
+    //检查缓冲区空间是否足够
+    if(SEND_BUFSIZE - sinfo->sendbuf_len < 8)
+        return false;
+    printf("[%d] 封包pack_done\n", getpid());   
+    netpack->head.data_size = 0;
+    netpack->head.pack_size = 8;
     if(!netpack->upload(sinfo))
         return false;
-    return true;
+    return true;   
 }
-
-
 
 bool mkpack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
@@ -681,38 +729,20 @@ bool chkpack_fetch (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK*
             break;
         }
     }
-
-    if(!bno) return false; //SP中无此 head
-    
-    for(int i = 0; CPINFO[i].no != -99; ++i){
-        if(CPINFO[i].no == bno){
-            CPINFO[i].status = PACK_UNDO;
-            CPINFO[i].bno = (int)head_pad;
-            return true;
-        }
-    }
-    return false; //CP中无此 no
-}
-bool chkpack_fchn (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
-{
-    u_short head = ((netpack->head).head_index << 8) | ((netpack->head).head_type);
-    u_short head_pad = (netpack->head).pad;
-    int bno = 0;
-    for(int i = 0; SPINFO[i].no != 99; ++i){
-        if(SPINFO[i].head == head){
-            bno = SPINFO[i].bno;
-            break;
-        }
-    }
     if(!bno) return false; //SP中无此 head
     for(int i = 0; CPINFO[i].no != -99; ++i){
         if(CPINFO[i].no == bno){
             CPINFO[i].status = PACK_UNDO;
-            if(head_pad == 0x0000)
-                CPINFO[i].bno |= 0x0001;
-            if(head_pad == 0x0001)
-                CPINFO[i].bno |= 0x0002;
-            
+            if(CPINFO[i].ispad){
+                HPADINFO * hp = new (nothrow)HPADINFO;
+                if(!hp){
+                    printf("[%d] new HPADINFO faild！动态申请空间失败!\n", getpid());
+                    return false;
+                }
+                hp->head_pad = head_pad;
+                hp->next = CPINFO[i].hpif;
+                CPINFO[i].hpif = hp;
+            }
             return true;
         }
     }
@@ -730,7 +760,7 @@ void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
     //检查是否需要封包
     for(int i = 0; CPINFO[i].no!=-99; ++i){
         if(CPINFO[i].status == PACK_UNDO){ //需要封包
-            NETPACK pack(CPINFO[i].head, CPINFO[i].bno);
+            NETPACK pack(CPINFO[i].head);
             //printf("[%d] 检查pack%d\n", getpid(), CPINFO[i].no);
             //printf("[%d] test 检查netpack.head是否正确 head_type:0x%x head_index:0x%x\n", getpid(), pack.head.head_type, pack.head.head_index);
             if(CPINFO[i].pack_fun(sinfo, SPINFO, CPINFO, &pack))
@@ -782,7 +812,6 @@ void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
         if(!SPINFO[i].unpack_fun(sinfo, SPINFO, CPINFO, &pack))
             return;
         printf("[%d] 处理包结束!\n", getpid());
-    
     }
     return; //不可能的成功
 }
@@ -795,7 +824,7 @@ int sub(int devid)
     {2  ,3 , chkpack_fetch , 0x0211, "取系统信息",      PACK_EMPTY},
     {3  ,4 , chkpack_fetch , 0x0311, "取配置信息",      PACK_EMPTY},
     {4  ,5 , chkpack_fetch , 0x0411, "取进程信息",      PACK_EMPTY},
-    {5  ,6 , chkpack_fchn  , 0x0511, "取以太口信息",    PACK_EMPTY},
+    {5  ,6 , chkpack_fetch  , 0x0511, "取以太口信息",    PACK_EMPTY},
     {6  ,7 , chkpack_fetch , 0x0711, "取USB口信息",     PACK_EMPTY},
     {7  ,8 , chkpack_fetch , 0x0c11, "取U盘上文件列表信息", PACK_EMPTY},
     {8  ,9 , chkpack_fetch , 0x0811, "取打印口信息",    PACK_EMPTY},
@@ -803,26 +832,27 @@ int sub(int devid)
     {10 ,11, chkpack_fetch , 0x0911, "取终端服务信息",  PACK_EMPTY},
     {11 ,12, chkpack_fetch , 0x0a11, "取哑终端信息",    PACK_EMPTY},
     {12 ,13, chkpack_fetch , 0x0b11, "取IP终端端信息",  PACK_EMPTY},
-    {13 ,0 , chkpack_err   , 0xff11, "所有包均收到",    PACK_EMPTY},
+    {13 ,14 ,chkpack_fetch , 0xff11, "所有包均收到",    PACK_EMPTY},
     {-99,0 , chkpack_err   , 0x0000, "ERR",            PACK_EMPTY}
     };
     CLTPACK CLIENT_PACK_INFO[] = {
-    {1  ,0 , mkpack_vno  , 0x0091, "发最低版本要求", PACK_EMPTY},
-    {2  ,0 , mkpack_auth , 0x0191, "发认证串及基本配置信息", PACK_EMPTY},
-    {3  ,0 , mkpack_sysif, 0x0291, "发系统信息", PACK_EMPTY},
-    {4  ,0 , mkpack_str  , 0x0391, "发配置信息", PACK_EMPTY},
-    {5  ,0 , mkpack_str  , 0x0491, "发进程信息", PACK_EMPTY},
-    {6  ,2 , mkpack_eth  , 0x0591, "发以太口信息", PACK_EMPTY},
-    {7  ,0 , mkpack_usb  , 0x0791, "发USB口信息", PACK_EMPTY},
-    {8  ,0 , mkpack_str  , 0x0c91, "发U盘文件列表信息", PACK_EMPTY},
-    {9  ,0 , mkpack_prn  , 0x0891, "发打印口信息", PACK_EMPTY},
-    {10 ,0 , mkpack_str  , 0x0d91, "发打印队列信息", PACK_EMPTY},
-    {11 ,0 , mkpack_tty  , 0x0991, "发终端服务信息", PACK_EMPTY},
-    {12 ,0 , mkpack_mtsn , 0x0a91, "发哑终端信息", PACK_EMPTY},
-    {13 ,0 , mkpack_itsn , 0x0b91, "发IP终端信息", PACK_EMPTY},
-    {14 ,0 , mkpack_err  , 0xff91, "所有包均收到", PACK_EMPTY},
-    {-99,0 , mkpack_err  , 0x0000, "ERR", PACK_EMPTY}
+    {1  ,0 ,NULL , mkpack_vno  , 0x0091, "发最低版本要求", PACK_EMPTY},
+    {2  ,0 ,NULL , mkpack_auth , 0x0191, "发认证串及基本配置信息", PACK_EMPTY},
+    {3  ,0 ,NULL , mkpack_sysif, 0x0291, "发系统信息", PACK_EMPTY},
+    {4  ,0 ,NULL , mkpack_str  , 0x0391, "发配置信息", PACK_EMPTY},
+    {5  ,0 ,NULL , mkpack_str  , 0x0491, "发进程信息", PACK_EMPTY},
+    {6  ,1 ,NULL , mkpack_eth  , 0x0591, "发以太口信息", PACK_EMPTY},
+    {7  ,0 ,NULL , mkpack_usb  , 0x0791, "发USB口信息", PACK_EMPTY},
+    {8  ,0 ,NULL , mkpack_str  , 0x0c91, "发U盘文件列表信息", PACK_EMPTY},
+    {9  ,0 ,NULL , mkpack_prn  , 0x0891, "发打印口信息", PACK_EMPTY},
+    {10 ,0 ,NULL , mkpack_str  , 0x0d91, "发打印队列信息", PACK_EMPTY},
+    {11 ,0 ,NULL , mkpack_tty  , 0x0991, "发终端服务信息", PACK_EMPTY},
+    {12 ,1 ,NULL , mkpack_mtsn , 0x0a91, "发哑终端信息", PACK_EMPTY},
+    {13 ,1 ,NULL , mkpack_itsn , 0x0b91, "发IP终端信息", PACK_EMPTY},
+    {14 ,0 ,NULL , mkpack_done , 0xff91, "所有包均收到", PACK_EMPTY},
+    {-99,0 ,NULL , mkpack_err  , 0x0000, "ERR",         PACK_EMPTY}
     };
+    
     SOCK_INFO sinfo;
     sinfo.devid = devid;
 
@@ -892,7 +922,7 @@ int sub(int devid)
 //主进程调度
 int main(int argc, char** argv)
 {
-
+    srand(time(NULL));
     if(!chk_arg(argc, argv)){//检查并取得运行参数 _devid, _devnum
         return 0;
     }

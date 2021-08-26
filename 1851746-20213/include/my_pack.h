@@ -259,6 +259,7 @@ struct CSP_TSNIF{
         port =  ttyid;
         sport = ttyid;
         num_sno = snum;
+        printf("[!!!] num_sno=%u\n", snum);
         live_sno = rand()%(snum);
         
         memset(tty_type, 0, sizeof(tty_type));
@@ -355,13 +356,6 @@ public:
         head.pad = 0x0000;
         databuf = NULL;
     }
-    NETPACK(u_short head_info, u_short head_pad)
-    {
-        memcpy(&(head.head_type), &head_info, 1);
-        memcpy(&(head.head_index), (u_char*)(&head_info) + 1, 1);
-        head.pad = head_pad;
-        databuf = NULL;
-    }
     /*Îö¹¹º¯Êý*/
     ~NETPACK(){if(databuf) delete databuf;}
 
@@ -379,7 +373,8 @@ public:
         head.pad = htons(head.pad);
         //to sendbuf
         memcpy(sinfo->sendbuf + sinfo->sendbuf_len, &head, psize-dsize);
-        memcpy(sinfo->sendbuf + sinfo->sendbuf_len + psize-dsize, databuf, dsize);
+        if(dsize>0)
+            memcpy(sinfo->sendbuf + sinfo->sendbuf_len + psize-dsize, databuf, dsize);
         sinfo->sendbuf_len += psize;
         //to_log
         data_tolog("./client_send.log",dsize);
@@ -419,6 +414,8 @@ public:
     {
         if(size <= 0)
             return false;
+        if(databuf)
+            delete databuf;
         databuf = new (nothrow) u_char [size];
         if(!databuf){
             printf("[%d] mk_databuf failed£¡¶¯Ì¬ÉêÇë¿Õ¼äÊ§°Ü\n", getpid());

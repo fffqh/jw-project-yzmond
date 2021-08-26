@@ -25,6 +25,7 @@
 #include "../include/my_pack.h"
 #include "../include/my_getproc.h"
 #include "../include/my_getconf.h"
+#include "../include/my_log.h"
 
 using namespace std;
 
@@ -42,6 +43,9 @@ using namespace std;
 #define USBF_DAT_PATH "./usbfiles.dat"
 
 #define CONF_PATH "./ts.conf"
+#define LOG_PATH "./ts.log"
+
+
 
 //自定义结构体
 struct CLTPACK;
@@ -84,6 +88,8 @@ int  _conf_dprint = 1;
 //运行参数
 int  _devid;
 int  _devnum;
+
+MYLOG _mylog(LOG_PATH, getpid());
 
 /** 参数与配置 **/
 //chk_arg: 检查调用参数
@@ -185,6 +191,7 @@ static const char *childexit_to_str(const int no)
     {1, "创建socket失败"},
     {2, "发生读错误"},
     {3, "发生写错误"},
+    {4, "读取数据完成，连接被对端关闭"},
 	{5, "连接失败，达到最大重连次数"},  //按CTRL+C产生，非进程不截获
     {6, "select失败"},
     {7, "数字证书过期，连接关闭"},
@@ -204,9 +211,9 @@ void fun_waitChild(int no)
 {
     int sub_status;
     pid_t pid;
-    while ((pid = waitpid(0, &sub_status, WNOHANG)) > 0) {
+    while ((pid = waitpid(0, &sub_status, WNOHANG)) > 0) {        
         if (WIFEXITED(sub_status)){
-            printf("child %d exit with %d\n", pid, WEXITSTATUS(sub_status));
+            printf("child %d exit with %d （%s）\n", pid, WEXITSTATUS(sub_status), childexit_to_str(WEXITSTATUS(sub_status)));
             // subprocess_clear_num += 1;
         }
         else if (WIFSIGNALED(sub_status))
@@ -349,7 +356,7 @@ bool mkpack_vno(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
     //检查缓冲区空间是否足够
     if(SEND_BUFSIZE - sinfo->sendbuf_len < 12)
         return false;
-    printf("[%d] 封包pack_vno\n", getpid());   
+    //printf("[%d] 封包pack_vno\n", getpid());   
     
     CSP_VNO pack(2,0,0);
     if(!netpack->mk_databuf(sizeof(CSP_VNO)))
@@ -359,7 +366,7 @@ bool mkpack_vno(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
     memcpy(netpack->databuf, &pack, sizeof(pack));
     if(!netpack->upload(sinfo))
         return false;
-
+    //_mylog.pack_tolog(DIR_SEND, "发最低版本", 8 + sizeof(pack));
     return true;
 }
 bool mkpack_auth(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
@@ -367,7 +374,7 @@ bool mkpack_auth(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* ne
     //检查缓冲区空间是否足够
     if(SEND_BUFSIZE - sinfo->sendbuf_len < 8+(int)sizeof(CSP_AUTH))
         return false;
-    printf("[%d] 封包pack_auth\n", getpid());  
+    // printf("[%d] 封包pack_auth\n", getpid());  
 
     PROCINFO pinfo_cpuMHz("/proc/cpuinfo", "cpu MHz");
     PROCINFO pinfo_MTotal("/proc/meminfo", "MemTotal");
@@ -389,6 +396,9 @@ bool mkpack_auth(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* ne
     memcpy(netpack->databuf, &pack, sizeof(pack));
     if(!netpack->upload(sinfo))
         return false;
+    //_mylog.pack_tolog(DIR_SEND, "发认证串及基本配置信息", 8 + sizeof(pack));
+    // printf("[%d] 封包pack_auth成功结束！\n", getpid());  
+    
     return true;
 }
 bool mkpack_sysif(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
@@ -396,7 +406,7 @@ bool mkpack_sysif(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* n
     //检查缓冲区空间是否足够
     if(SEND_BUFSIZE - sinfo->sendbuf_len < 8+(int)sizeof(CSP_SYSIF))
         return false;
-    printf("[%d] 封包pack_sysif\n", getpid()); 
+    //printf("[%d] 封包pack_sysif\n", getpid()); 
     
     PROCINFO pinfo_cpu("/proc/stat", "cpu");
     string cpu = pinfo_cpu.get();
@@ -418,11 +428,12 @@ bool mkpack_sysif(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* n
     memcpy(netpack->databuf, &pack, sizeof(pack));
     if(!netpack->upload(sinfo))
         return false;
+    //_mylog.pack_tolog(DIR_SEND, "发系统信息", 8 + sizeof(pack));
     return true;
 }
 bool mkpack_str(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-    printf("[%d] 封包pack_str\n", getpid());   
+    //printf("[%d] 封包pack_str\n", getpid());   
 
     int max_size = 8191;
     FILE * fp = NULL;
@@ -467,7 +478,7 @@ bool mkpack_str(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
 }
 bool mkpack_eth(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-    printf("[%d] 封包pack_eth\n", getpid());   
+    //printf("[%d] 封包pack_eth\n", getpid());   
 
     int i = 0;//当前包的 pos
     for(i = 0; CPINFO[i].no != -99; ++i)
@@ -505,7 +516,7 @@ bool mkpack_eth(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
 }
 bool mkpack_usb(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-    printf("[%d] 封包pack_usb\n", getpid());   
+    //printf("[%d] 封包pack_usb\n", getpid());   
 
     if(SEND_BUFSIZE - sinfo->sendbuf_len < 8+(int)sizeof(CSP_USBIF))
         return false;
@@ -521,7 +532,7 @@ bool mkpack_usb(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
 }
 bool mkpack_prn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-    printf("[%d] 封包pack_prn\n", getpid());   
+    //printf("[%d] 封包pack_prn\n", getpid());   
 
     if(SEND_BUFSIZE - sinfo->sendbuf_len < 8+(int)sizeof(CSP_PRNIF))
         return false;
@@ -538,7 +549,7 @@ bool mkpack_prn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
 }
 bool mkpack_tty(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-    printf("[%d] 封包pack_tty\n", getpid());   
+    //printf("[%d] 封包pack_tty\n", getpid());   
     if(SEND_BUFSIZE - sinfo->sendbuf_len < 8 + (int)sizeof(CSP_TTYIF))
         return false;
     CSP_TTYIF pack(sinfo->devid, _conf_mindn, _conf_maxdn);
@@ -553,7 +564,7 @@ bool mkpack_tty(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
 }
 bool mkpack_mtsn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
-    printf("[%d] 封包pack_mtsn\n", getpid());   
+    //printf("[%d] 封包pack_mtsn\n", getpid());   
     int i = 0;//当前包的 pos
     for(i = 0; CPINFO[i].no != -99; ++i)
         if(CPINFO[i].head == 0x0a91)
@@ -605,7 +616,7 @@ bool mkpack_mtsn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* ne
 }
 bool mkpack_itsn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {   //不定长的包
-    printf("[%d] 封包pack_itsn\n", getpid());   
+    //printf("[%d] 封包pack_itsn\n", getpid());   
     int i = 0;//当前包的 pos
     for(i = 0; CPINFO[i].no != -99; ++i)
         if(CPINFO[i].head == 0x0b91)
@@ -660,7 +671,7 @@ bool mkpack_done(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* ne
     //检查缓冲区空间是否足够
     if(SEND_BUFSIZE - sinfo->sendbuf_len < 8)
         return false;
-    printf("[%d] 封包pack_done\n", getpid());   
+    //printf("[%d] 封包pack_done\n", getpid());   
     netpack->head.data_size = 0;
     netpack->head.pack_size = 8;
     if(!netpack->upload(sinfo))
@@ -721,7 +732,7 @@ bool chkpack_fetch (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK*
     u_short head = ((netpack->head).head_index << 8) | ((netpack->head).head_type);
     u_short head_pad = (netpack->head).pad;
     
-    printf("[%d] test head in chkpack_fetch if is right : 0x%x\n", getpid(), head);
+    //printf("[%d] test head in chkpack_fetch if is right : 0x%x\n", getpid(), head);
     int bno = 0;
     for(int i = 0; SPINFO[i].no != 99; ++i){
         if(SPINFO[i].head == head){
@@ -801,23 +812,31 @@ void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
         if(sinfo->recvbuf_len < (int)pack_size)
             return; //不完整的包
 
-        printf("[%d] 解包测试完成: head:0x%x, pack_size:%d, data_size:%d\n", getpid(), head, pack_size, data_size);
+        //printf("[%d] 解包测试完成: head:0x%x, pack_size:%d, data_size:%d\n", getpid(), head, pack_size, data_size);
         
         //若包完整，开始解包
         NETPACK pack;
         if(!pack.dwload(sinfo, pack_size, data_size))
             return; //解包失败
         printf("[%d] 解包结束! 当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
+        
+        //tolog
+        ostringstream intfbuf;
+        intfbuf << SPINFO[i].str;
+        if(SPINFO[i].head == 0x0511 || SPINFO[i].head == 0x0a11 || SPINFO[i].head == 0x0b11)
+            intfbuf << "(" << pack.head.pad <<")";
+        _mylog.pack_tolog(DIR_RECV, intfbuf.str().c_str());
+        
         //解包完成，进行检查与处理
         if(!SPINFO[i].unpack_fun(sinfo, SPINFO, CPINFO, &pack))
             return;
-        printf("[%d] 处理包结束!\n", getpid());
+        //printf("[%d] 处理包结束!\n", getpid());
     }
     return; //不可能的成功
 }
 
 //与Server通信：devid子进程
-int sub(int devid)
+int sub(u_int devid)
 {
     SEVPACK SERVER_PACK_INFO[] = {
     {1  ,2 , chkpack_auth  , 0x0111, "认证请求",        PACK_EMPTY},
@@ -855,6 +874,7 @@ int sub(int devid)
     
     SOCK_INFO sinfo;
     sinfo.devid = devid;
+    _mylog.set_devid(devid);
 
     if(!create_socket(sinfo.sockfd, 1)){//创建socket，第2个参数代表是否非阻塞
         exit(1);
@@ -862,7 +882,9 @@ int sub(int devid)
     if(!connect_with_limit(sinfo.sockfd, 5)){//连接Server
         exit(5);
     }
-    printf("[%d] Connected(%s:%d) OK.\n", getpid(), _conf_ip, _conf_port);
+    char buf[64] = {0};
+    sprintf(buf,"Connected(%s:%d) OK.", _conf_ip, _conf_port);
+    _mylog.str_tolog(buf);
 
     //使用 select 模型进行读写控制
     sinfo.recvbuf_len = 0;
@@ -889,21 +911,24 @@ int sub(int devid)
         if( sel>0 && FD_ISSET(sinfo.sockfd, &rfd_set)){
             len = recv(sinfo.sockfd, sinfo.recvbuf + sinfo.recvbuf_len, 
                                             RECV_BUFSIZE - sinfo.recvbuf_len, 0);
-            if(len <= 0){
+            if(len == 0){
+                exit(4);//连接被对端关闭
+            }
+            if(len < 0){
                 exit(2);//发生读错误
             }
             sinfo.recvbuf_len += len;
-            //处理读缓冲区（拆包）
-            //...
+            _mylog.buf_tolog(DIR_RECV, sinfo.recvbuf + sinfo.recvbuf_len-len, len);
             unpack(&sinfo, SERVER_PACK_INFO, CLIENT_PACK_INFO);
         }
         //写
         if( sel>0 && FD_ISSET(sinfo.sockfd, &wfd_set)){
             len = send(sinfo.sockfd, sinfo.sendbuf, sinfo.sendbuf_len, 0);
-            if(len < 0){
+            if(len <= 0){
                 exit(3);//发生写错误
             }
             sinfo.sendbuf_len -= len;
+            _mylog.buf_tolog(DIR_SEND, sinfo.sendbuf, len);
             if(sinfo.sendbuf_len > 0){//将剩余数据前移
                 memmove(sinfo.sendbuf, sinfo.sendbuf + len, sinfo.sendbuf_len);
             }
@@ -933,6 +958,8 @@ int main(int argc, char** argv)
     print_conf();
     //注册信号
     set_signal_catch();
+
+    (_conf_dprint == 1)? _mylog.set_std(1) : _mylog.set_std(0);
 
     //分裂 devnum 个子进程
     //log: fork子进程开始！

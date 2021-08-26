@@ -1,5 +1,9 @@
+#ifndef MY_PACK_H
+#define MY_PACK_H
+
 #include <iostream>
 #include <stdio.h>
+#include <iomanip>
 #include <string>
 #include <string.h>
 #include <unistd.h>
@@ -13,6 +17,9 @@ using namespace std;
 
 #include "my_socket.h"
 #include "my_getproc.h"
+#include "my_log.h"
+
+extern MYLOG _mylog;
 
 // __HEAD_PACK
 // +-----------+------------+----------------------+
@@ -20,6 +27,52 @@ using namespace std;
 // +-----------+------------+----------------------+
 // | pad                    | data_size            |
 // +------------------------+----------------------+
+
+struct _PK_{
+    u_char head_type;
+    u_char head_index;
+    const char* str;
+    u_char sub;
+};
+
+_PK_ MYPK[] = {
+    {0x91, 0x00, "发最低版本要求",0},
+    {0x91, 0x01, "发认证串及基本配置信息",0},
+    {0x91, 0x02, "发系统信息",0},
+    {0x91, 0x03, "发配置信息",0},
+    {0x91, 0x04, "发进程信息",0},
+    {0x91, 0x05, "发以太口信息",1},
+    {0x91, 0x07, "发USB口信息",0},
+    {0x91, 0x0c, "发U盘文件列表信息",0},
+    {0x91, 0x08, "发打印口信息",0},
+    {0x91, 0x0d, "发打印队列信息",0},
+    {0x91, 0x09, "发终端服务信息",0},
+    {0x91, 0x0a, "发哑终端信息",1},
+    {0x91, 0x0b, "发IP终端信息",1},
+    {0x91, 0xff, "所有包均收到",0},
+    {0x00, 0x00, "ERR", 0}
+};
+
+struct _PKINFO_{
+    _PK_* PKLST;
+    const char* getstr(u_char hty, u_char hid)
+    {
+        for(int i = 0; PKLST[i].head_type != 0x00; ++i)
+            if(PKLST[i].head_type == hty && PKLST[i].head_index == hid)
+                return PKLST[i].str;
+        return NULL;
+    }
+    u_char is_sub(u_char hty, u_char hid)
+    {
+        for(int i = 0; PKLST[i].head_type != 0x00; ++i)
+            if(PKLST[i].head_type == hty && PKLST[i].head_index == hid)
+                return PKLST[i].sub;
+        return 0;        
+    }
+
+};
+
+_PKINFO_ MYPKINFO = {MYPK};
 
 struct HEADPACK{
     u_char head_type;
@@ -185,28 +238,6 @@ struct CSP_ETHIF{
 
 };
 
-/*
-#include <algorithm>
-#include <iostream>
-#include <vector>
-using namespace std;
-
-void randperm(int Num)
-{
-    vector<int> temp;
-    for (int i = 0; i < Num; ++i)
-    {
-        temp.push_back(i + 1);
-    }
-    random_shuffle(temp.begin(), temp.end());
-    for (int i = 0; i < temp.size(); i++)
-    {
-        cout << temp[i] << " ";
-    }
-}
-cout << endl;
-*/
-
 struct CSP_TTYIF{
     u_char mtty[16];
     u_char tty[254];
@@ -335,8 +366,6 @@ struct CSP_SNIF{
     }
 };
 
-
-
 class NETPACK{
 public:
     /*包数据*/
@@ -367,6 +396,14 @@ public:
             return false;
         u_short dsize = head.data_size;
         u_short psize = head.pack_size;
+        
+        //tolog
+        ostringstream intfbuf;
+        intfbuf << MYPKINFO.getstr(head.head_type, head.head_index);
+        if(MYPKINFO.is_sub(head.head_type, head.head_index))
+            intfbuf << "(" << head.pad <<")";
+        //printf("test sig 6th!!!!\n");
+        _mylog.pack_tolog(DIR_SEND, intfbuf.str().c_str(), psize);
         //主机序转网络序
         head.data_size = htons(head.data_size);
         head.pack_size = htons(head.pack_size);
@@ -376,8 +413,6 @@ public:
         if(dsize>0)
             memcpy(sinfo->sendbuf + sinfo->sendbuf_len + psize-dsize, databuf, dsize);
         sinfo->sendbuf_len += psize;
-        //to_log
-        data_tolog("./client_send.log",dsize);
         return true;
     }
     //卸载包
@@ -464,3 +499,5 @@ private:
     }
 
 };
+
+#endif

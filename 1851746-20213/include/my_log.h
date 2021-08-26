@@ -57,6 +57,22 @@ private:
         return string(HMS);
     }
 
+    time_t GetDateTime(char * psDateTime) 
+    {
+        time_t nSeconds;
+        struct tm * pTM;
+        
+        time(&nSeconds);
+        pTM = localtime(&nSeconds);
+
+        /* 系统日期和时间,格式: yyyymmddHHMMSS */
+        sprintf(psDateTime, "%04d-%02d-%02d %02d:%02d:%02d",
+                pTM->tm_year + 1900, pTM->tm_mon + 1, pTM->tm_mday,
+                pTM->tm_hour, pTM->tm_min, pTM->tm_sec);
+                
+        return nSeconds;
+    }
+
 public:
     MYLOG(const char* path, u_int index)
     {
@@ -162,6 +178,77 @@ public:
             fclose(fp);
         }
         return true;
+    }
+    bool fork_tolog(int fnum, int wnum)
+    {
+        int pos = 1 + wnum - fnum;
+        const char* info[]={
+        "本次子进程回收数大于分裂数，出错",
+        "本次子进程回收全部完成",
+        "本次子进程未回收完成"
+        };
+        if(tostd){
+            printf("%s [%u] %s(%d/%d/%d).\n", get_time().c_str(), devid, info[pos], fnum-wnum, fnum, wnum);
+        }
+        if(tofle){
+            FILE* fp = NULL;
+            fp = fopen(log_path, "a"); //追加写
+            if(!fp){
+                printf("[%d] mylog::fork_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
+                return false;
+            }
+            fprintf(fp, "%s [%u] %s(%d/%d/%d).\n", get_time().c_str(), devid, info[pos], fnum-wnum, fnum, wnum);
+            fclose(fp);    
+        }
+        return true;
+    }
+
+    time_t fst_tolog()
+    {
+        const int DTSize = 30;
+        char DateTime[DTSize] = {0};
+        time_t nSeconds = GetDateTime(DateTime);
+        if(tostd){
+            printf("%s [%u] fork子进程开始[%s]", get_time().c_str(), devid, DateTime);
+        }
+        if(tofle){
+            FILE* fp = NULL;
+            fp = fopen(log_path, "a"); //追加写
+            if(!fp){
+                printf("[%d] mylog::fork_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
+                return nSeconds;
+            }
+            fprintf(fp, "%s [%u] fork子进程开始[%s]\n", get_time().c_str(), devid, DateTime);
+
+            fclose(fp);  
+
+        }
+        return nSeconds;
+    }
+    time_t fed_tolog(time_t fst_nSeconds, int num)
+    {
+        const int DTSize = 30;
+        char DateTime[DTSize] = {0};
+        time_t fed_nSeconds = GetDateTime(DateTime);
+        
+        if(tostd){
+            printf("%s [%u] fork子进程结束[%s]，总数=%d，耗时=%llu秒\n",
+                    get_time().c_str(), devid, DateTime, num, fed_nSeconds-fst_nSeconds);
+        }
+    
+        if(tofle){
+            FILE* fp = NULL;
+            fp = fopen(log_path, "a"); //追加写
+            if(!fp){
+                printf("[%d] mylog::fed_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
+                return fed_nSeconds;
+            }
+            fprintf(fp, "%s [%u] fork子进程结束[%s]，总数=%d，耗时=%llu秒\n",
+                    get_time().c_str(), devid, DateTime, num, fed_nSeconds-fst_nSeconds);
+
+            fclose(fp);           
+        }
+        return fed_nSeconds;
     }
 
 };

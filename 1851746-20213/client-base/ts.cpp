@@ -91,6 +91,16 @@ int  _devnum;
 
 MYLOG _mylog(LOG_PATH, getpid());
 
+//记录进程分裂与回收情况
+unsigned long _subproc_forknum;
+unsigned long _subproc_waitnum;
+//记录 fork 时长
+time_t fst_nSeconds;
+time_t fed_nSeconds;
+
+bool _fork_end_bool = 0; 
+
+
 /** 参数与配置 **/
 //chk_arg: 检查调用参数
 bool chk_arg(int argc, char** argv)
@@ -212,12 +222,19 @@ void fun_waitChild(int no)
     int sub_status;
     pid_t pid;
     while ((pid = waitpid(0, &sub_status, WNOHANG)) > 0) {        
+        _subproc_waitnum++;
         if (WIFEXITED(sub_status)){
             printf("child %d exit with %d （%s）\n", pid, WEXITSTATUS(sub_status), childexit_to_str(WEXITSTATUS(sub_status)));
             // subprocess_clear_num += 1;
         }
         else if (WIFSIGNALED(sub_status))
             printf("child %d killed by the %dth signal\n", pid, WTERMSIG(sub_status));
+        
+        printf("[%d] test _subproc_forknum = %d, _subproc_waitnum = %d\n",getpid(), _subproc_forknum, _subproc_waitnum);
+        
+        if(_subproc_forknum == _subproc_waitnum){
+            _fork_end_bool = true; 
+        }
     }
 }
 //信号捕捉与注册
@@ -488,7 +505,7 @@ bool mkpack_eth(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
         return false;//为找到当前包
     while(1){
         //检查空间是否足够
-        if(SEND_BUFSIZE-sinfo->sendbuf_len < 8 + sizeof(CSP_ETHIF))
+        if(SEND_BUFSIZE-sinfo->sendbuf_len < 8 + (int)sizeof(CSP_ETHIF))
             return false;
         //取得当前的包头pad
         netpack->head.pad = CPINFO[i].hpif->head_pad;
@@ -947,7 +964,11 @@ int sub(u_int devid)
 //主进程调度
 int main(int argc, char** argv)
 {
+    //全局变量初始化
+    _subproc_waitnum = 0;
+    _subproc_forknum = 0;
     srand(time(NULL));
+
     if(!chk_arg(argc, argv)){//检查并取得运行参数 _devid, _devnum
         return 0;
     }
@@ -958,12 +979,12 @@ int main(int argc, char** argv)
     print_conf();
     //注册信号
     set_signal_catch();
-
+    //初始化log
     (_conf_dprint == 1)? _mylog.set_std(1) : _mylog.set_std(0);
 
-    //分裂 devnum 个子进程
     //log: fork子进程开始！
-    printf("[%d] log:fork子进程开始[%s]\n", getpid(), get_time_full());
+    fst_nSeconds = _mylog.fst_tolog();
+    //分裂 devnum 个子进程
     for(int i = 0; i < _devnum; ++i){
         pid_t pid = fork();
         if(pid == -1){//fork err
@@ -973,8 +994,21 @@ int main(int argc, char** argv)
         else if(pid == 0){//child
             exit( sub(_devid + i) ); //子进程的运行及返回
         }
+        _subproc_forknum++;
     }
+    //主进程睡眠
     while(1){
+        if(_fork_end_bool){
+            printf("[%d] test fork_end !!!\n", getpid());
+            //log: fork&wait 情况反馈
+            _mylog.fork_tolog(_subproc_forknum, _subproc_waitnum);
+            //log: fork end!
+            fed_nSeconds = _mylog.fed_tolog(fst_nSeconds, _subproc_forknum);
+            _fork_end_bool = false;
+        }
         sleep(1);
     }
+    return 0;
 }
+
+

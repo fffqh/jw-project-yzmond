@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <sys/socket.h>
+#include <sys/file.h> //加文件锁
 
 using namespace std;
 
@@ -94,20 +95,97 @@ public:
         devid = index;
     }
     
+    bool rw_tolog(int dir, int len)
+    {
+        if(tostd){
+            if(dir == DIR_SEND){
+                printf("%s [%u] 发送数据%d字节\n", get_time().c_str(), devid, len);
+            }
+            else{
+                printf("%s [%u] 读取%d字节\n", get_time().c_str(), devid, len);
+            }
+        }
+        if(tofle){
+            FILE* fp = NULL;
+            fp = fopen(log_path, "a"); //追加写
+            if(!fp){
+                printf("[%d] mylog::rw_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
+                return false;
+            }
+            //对文件加写锁
+            int ifd = fileno(fp);
+            if(flock(ifd, LOCK_EX)!=0){
+                printf("[%d] 文件加锁失败，可能出现数据错误(%s)!\n", getpid(), log_path);
+            }
+
+            if(dir == DIR_SEND){
+                fprintf(fp, "%s [%u] 发送数据%d字节\n", get_time().c_str(), devid, len);
+            }
+            else{
+                fprintf(fp, "%s [%u] 读取%d字节\n", get_time().c_str(), devid, len);
+            }
+            //解锁
+            if(flock(ifd, LOCK_UN)!=0){
+                printf("[%u] 文件解锁失败，可能出现错误（%s）\n", getpid(), log_path);
+            }
+            fclose(fp);
+        }
+
+
+        return true;
+    }
     bool buf_tolog(int dir, u_char* buf, int len)
     {
+        if(tostd){
+            if(dir == DIR_SEND){
+                printf("%s [%u] (发送数据为:)\n", get_time().c_str(), devid);
+            }
+            else{
+                printf("%s [%u] (读取数据为:)\n", get_time().c_str(), devid);
+            }
+            //将 buf 按格式写入log
+            for(int i = 0; i < (len + 15)/16; ++i){ //按行
+                printf("  %04X: ", i);
+                //hex
+                for(int k = 0; k < 8; ++k){
+                    (16*i+k < len)? printf(" %02x", buf[16*i+k]): printf("   ");
+                }
+                printf(" -");
+                for(int k = 8; k < 16; ++k){
+                    (16*i+k < len)? printf(" %02x", buf[16*i+k]):printf("   ");
+                }
+                printf("  ");
+                //char
+                for(int k = 0; k < 16; ++k){
+                    if(16*i+k < len){
+                        (isprint(buf[16*i+k]) && !iscntrl(buf[16*i+k])) ? 
+                            printf("%c", buf[16*i+k]) : 
+                            printf(".");
+                    }
+                }
+                printf("\n");
+            }
+        }
+
+        if(!tofle)
+            return true;
         FILE* fp = NULL;
         fp = fopen(log_path, "a"); //追加写
         if(!fp){
             printf("[%d] mylog::buf_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
             return false;
         }
+
+        //对文件加写锁
+        int ifd = fileno(fp);
+        if(flock(ifd, LOCK_EX)!=0){
+            printf("[%d] 文件加锁失败，可能出现数据错误(%s)!\n", getpid(), log_path);
+        }
+
         if(dir == DIR_SEND){
-            fprintf(fp, "%s [%u] 发送数据%d字节\n", get_time().c_str(), devid, len);
             fprintf(fp, "%s [%u] (发送数据为:)\n", get_time().c_str(), devid);
         }
         else{
-            fprintf(fp, "%s [%u] 读取%d字节\n", get_time().c_str(), devid, len);
             fprintf(fp, "%s [%u] (读取数据为:)\n", get_time().c_str(), devid);
         }
         //将 buf 按格式写入log
@@ -132,6 +210,11 @@ public:
             }
             fprintf(fp, "\n");
         }
+
+        //解锁
+        if(flock(ifd, LOCK_UN)!=0){
+            printf("[%u] 文件解锁失败，可能出现错误（%s）\n", getpid(), log_path);
+        }
         fclose(fp);
         return true;
     }
@@ -148,7 +231,16 @@ public:
                 printf("[%d] mylog::str_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
                 return false;
             }
+            //对文件加写锁
+            int ifd = fileno(fp);
+            if(flock(ifd, LOCK_EX)!=0){
+                printf("[%d] 文件加锁失败，可能出现数据错误(%s)!\n", getpid(), log_path);
+            }
             fprintf(fp, "%s [%u] %s\n", get_time().c_str(), devid, str);
+            //解锁
+            if(flock(ifd, LOCK_UN)!=0){
+                printf("[%u] 文件解锁失败，可能出现错误（%s）\n", getpid(), log_path);
+            }            
             fclose(fp);
         }
 
@@ -156,6 +248,7 @@ public:
     }
     bool pack_tolog(int dir, const char* intf, int len=0)
     {
+        //return true;
         if(tostd){
             if(dir == DIR_RECV)
                 printf("%s [%u] 收到客户端状态请求[intf=%s]\n", get_time().c_str(), devid, intf);
@@ -169,12 +262,21 @@ public:
                 printf("[%d] mylog::pack_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
                 return false;
             }
+            
+            //对文件加写锁
+            int ifd = fileno(fp);
+            if(flock(ifd, LOCK_EX)!=0){
+                printf("[%d] 文件加锁失败，可能出现数据错误(%s)!\n", getpid(), log_path);
+            }
 
             if(dir == DIR_RECV)
                 fprintf(fp, "%s [%u] 收到客户端状态请求[intf=%s]\n", get_time().c_str(), devid, intf);
             else
                 fprintf(fp, "%s [%u] 收到客户端状态应答[intf=%s len=%d(C-0)]\n", get_time().c_str(), devid, intf, len);
-
+            //解锁
+            if(flock(ifd, LOCK_UN)!=0){
+                printf("[%u] 文件解锁失败，可能出现错误（%s）\n", getpid(), log_path);
+            }   
             fclose(fp);
         }
         return true;
@@ -187,7 +289,7 @@ public:
         "本次子进程回收全部完成",
         "本次子进程未回收完成"
         };
-        if(tostd){
+        if(true){
             printf("%s [%u] %s(%d/%d/%d).\n", get_time().c_str(), devid, info[pos], fnum-wnum, fnum, wnum);
         }
         if(tofle){
@@ -197,7 +299,17 @@ public:
                 printf("[%d] mylog::fork_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
                 return false;
             }
+            //对文件加写锁
+            int ifd = fileno(fp);
+            if(flock(ifd, LOCK_EX)!=0){
+                printf("[%d] 文件加锁失败，可能出现数据错误(%s)!\n", getpid(), log_path);
+            }
+
             fprintf(fp, "%s [%u] %s(%d/%d/%d).\n", get_time().c_str(), devid, info[pos], fnum-wnum, fnum, wnum);
+            //解锁
+            if(flock(ifd, LOCK_UN)!=0){
+                printf("[%u] 文件解锁失败，可能出现错误（%s）\n", getpid(), log_path);
+            }   
             fclose(fp);    
         }
         return true;
@@ -208,7 +320,7 @@ public:
         const int DTSize = 30;
         char DateTime[DTSize] = {0};
         time_t nSeconds = GetDateTime(DateTime);
-        if(true){
+        if(tostd){
             printf("%s [%u] fork子进程开始[%s]\n", get_time().c_str(), devid, DateTime);
         }
         if(tofle){
@@ -218,8 +330,16 @@ public:
                 printf("[%d] mylog::fork_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
                 return nSeconds;
             }
+            //对文件加写锁
+            int ifd = fileno(fp);
+            if(flock(ifd, LOCK_EX)!=0){
+                printf("[%d] 文件加锁失败，可能出现数据错误(%s)!\n", getpid(), log_path);
+            }
             fprintf(fp, "%s [%u] fork子进程开始[%s]\n", get_time().c_str(), devid, DateTime);
-
+            //解锁
+            if(flock(ifd, LOCK_UN)!=0){
+                printf("[%u] 文件解锁失败，可能出现错误（%s）\n", getpid(), log_path);
+            }   
             fclose(fp);  
 
         }
@@ -231,7 +351,7 @@ public:
         char DateTime[DTSize] = {0};
         time_t fed_nSeconds = GetDateTime(DateTime);
         
-        if(true){
+        if(tostd){
             printf("%s [%u] fork子进程结束[%s]，总数=%d，耗时=%ld秒\n",
                     get_time().c_str(), devid, DateTime, num, fed_nSeconds-fst_nSeconds);
         }
@@ -243,10 +363,18 @@ public:
                 printf("[%d] mylog::fed_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
                 return fed_nSeconds;
             }
+            //对文件加写锁
+            int ifd = fileno(fp);
+            if(flock(ifd, LOCK_EX)!=0){
+                printf("[%d] 文件加锁失败，可能出现数据错误(%s)!\n", getpid(), log_path);
+            }
             fprintf(fp, "%s [%u] fork子进程结束[%s]，总数=%d，耗时=%ld秒\n",
                     get_time().c_str(), devid, DateTime, num, fed_nSeconds-fst_nSeconds);
-
-            fclose(fp);           
+            //解锁
+            if(flock(ifd, LOCK_UN)!=0){
+                printf("[%u] 文件解锁失败，可能出现错误（%s）\n", getpid(), log_path);
+            }   
+            fclose(fp);      
         }
         return fed_nSeconds;
     }

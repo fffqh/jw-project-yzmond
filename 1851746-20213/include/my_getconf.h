@@ -62,11 +62,16 @@ public:
                 int name_sz = buf.length() - name_st;
                 buf = buf.substr(name_st, name_sz);
                 //是否存在分割符
-                int k = 0;
-                for(k = 0; k < (int)dlim_mark.length(); ++k)
-                    if((buf.find(dlim_mark[k])) != buf.npos)
-                        break;
-                if(k == (int)dlim_mark.length())
+                int minpos = (int)buf.length(); //记录当前最小位置
+                int k; //最小位置分隔符
+                for(int i = 0; i < (int)dlim_mark.length(); ++i){
+                    size_t pos = buf.find(dlim_mark[i]);
+                    if(pos != buf.npos && (int)pos < minpos){
+                        k = i;
+                        minpos = pos;
+                    }
+                }
+                if(minpos == (int)buf.length())
                     continue;//no dlim
                 //该 name 的状态检查
                 if(!rewrite && conf_item[i].status == CFITEM_FIND)

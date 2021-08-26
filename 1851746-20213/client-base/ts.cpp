@@ -43,6 +43,8 @@ using namespace std;
 #define LOG_PATH  "./ts.log"
 #define CNT_PATH  "./ts_count.xls" 
 
+#define LIMIT_TO_WT 100 //进程数量超过时，开始进行资源监控
+
 
 //配置参数（文件取得）
 char _conf_ip[16] = "192.168.1.242";
@@ -535,6 +537,8 @@ int main(int argc, char** argv)
         else if(pid == 0){//child
             exit( sub(_devid + i) ); //子进程的运行及返回
         }
+        //若进程数量超过 100 开始监控资源
+
         _subproc_forknum++;
     }
     //主进程睡眠

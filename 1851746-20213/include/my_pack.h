@@ -19,7 +19,19 @@ using namespace std;
 #include "my_getproc.h"
 #include "my_log.h"
 
+
+#define _DEBUG_ENV  (_conf_debug/100000)
+#define _DEBUG_ERR  (_conf_debug/10000%2)
+#define _DEBUG_SPACK  (_conf_debug/1000%2)
+#define _DEBUG_RPACK  (_conf_debug/100%2)
+#define _DEBUG_SDATA  (_conf_debug/10%2)
+#define _DEBUG_RDATA  (_conf_debug%2)
+
+
+
 extern MYLOG _mylog;
+extern int  _conf_debug;
+
 
 // __HEAD_PACK
 // +-----------+------------+----------------------+
@@ -402,7 +414,8 @@ public:
         if(MYPKINFO.is_sub(head.head_type, head.head_index))
             intfbuf << "(" << head.pad <<")";
         //printf("test sig 6th!!!!\n");
-        _mylog.pack_tolog(DIR_SEND, intfbuf.str().c_str(), psize);
+        if(_DEBUG_ENV)
+            _mylog.pack_tolog(DIR_SEND, intfbuf.str().c_str(), psize);
         //Ö÷»úÐò×ªÍøÂçÐò
         head.data_size = htons(head.data_size);
         head.pack_size = htons(head.pack_size);

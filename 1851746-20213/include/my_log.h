@@ -209,7 +209,7 @@ public:
         char DateTime[DTSize] = {0};
         time_t nSeconds = GetDateTime(DateTime);
         if(true){
-            printf("%s [%u] fork子进程开始[%s]", get_time().c_str(), devid, DateTime);
+            printf("%s [%u] fork子进程开始[%s]\n", get_time().c_str(), devid, DateTime);
         }
         if(tofle){
             FILE* fp = NULL;
@@ -251,6 +251,23 @@ public:
         return fed_nSeconds;
     }
 
+    bool cnt_tolog(u_int sumtty, u_int sumscr)
+    {
+        if(tostd){
+            printf("%s\t%u\t%u\t%u\t%u\n", get_time().c_str(), devid, 1, sumtty, sumscr);
+        }
+        if (tofle){
+            FILE* fp = NULL;
+            fp = fopen(log_path, "a"); //追加写
+            if(!fp){
+                printf("[%d] mylog::cnt_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
+                return false;
+            }
+            fprintf(fp, "%s\t%u\t%u\t%u\t%u\n", get_time().c_str(), devid, 1, sumtty, sumscr);
+            fclose(fp); 
+        }
+        return true;     
+    }
 };
 
 #endif

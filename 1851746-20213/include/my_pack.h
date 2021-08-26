@@ -312,7 +312,6 @@ struct CSP_TSNIF{
     }
 };
 
-
 struct CSP_SNIF{
     u_char  snid;
     u_char  pad1;

@@ -44,7 +44,7 @@ using namespace std;
 
 #define CONF_PATH "./ts.conf"
 #define LOG_PATH "./ts.log"
-
+#define CNT_PATH "./ts_count.xls" 
 
 
 //自定义结构体
@@ -99,7 +99,8 @@ time_t fst_nSeconds;
 time_t fed_nSeconds;
 
 bool _fork_end_bool = 0; 
-
+u_int _sum_tty = 0;
+u_int _sum_scr = 0;
 
 /** 参数与配置 **/
 //chk_arg: 检查调用参数
@@ -224,7 +225,7 @@ void fun_waitChild(int no)
     while ((pid = waitpid(0, &sub_status, WNOHANG)) > 0) {        
         _subproc_waitnum++;
         if (WIFEXITED(sub_status)){
-            printf("[%d] child %d exit with %d （%s）\n", getpid(), pid, WEXITSTATUS(sub_status), childexit_to_str(WEXITSTATUS(sub_status)));
+            //printf("[%d] child %d exit with %d （%s）\n", getpid(), pid, WEXITSTATUS(sub_status), childexit_to_str(WEXITSTATUS(sub_status)));
             // subprocess_clear_num += 1;
         }
         else if (WIFSIGNALED(sub_status))
@@ -333,7 +334,7 @@ bool connect_with_limit(int sockfd, int maxc)
         return false;
     }
     //connect成功了！！！
-    printf("[%d]连接主机成功，主机ip : %s，端口：%d \n", getpid(), _conf_ip, _conf_port);
+    //printf("[%d]连接主机成功，主机ip : %s，端口：%d \n", getpid(), _conf_ip, _conf_port);
     errno = 0;
     return true;
 }
@@ -622,6 +623,9 @@ bool mkpack_mtsn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* ne
         }
         if(!netpack->upload(sinfo))
             return false;
+        //统计信息
+        _sum_tty+=1;
+        _sum_scr+=snum;
         //hpif后移
         HPADINFO* hp = CPINFO[i].hpif;
         CPINFO[i].hpif = CPINFO[i].hpif->next;
@@ -674,6 +678,9 @@ bool mkpack_itsn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* ne
         }
         if(!netpack->upload(sinfo))
             return false;
+        //统计信息
+        _sum_tty+=1;
+        _sum_scr+=snum;
         //hpif后移
         HPADINFO* hp = CPINFO[i].hpif;
         CPINFO[i].hpif = CPINFO[i].hpif->next;
@@ -696,7 +703,6 @@ bool mkpack_done(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* ne
         return false;
     return true;   
 }
-
 bool mkpack_err(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
 {
     return true;
@@ -856,6 +862,8 @@ void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 //与Server通信：devid子进程
 int sub(u_int devid)
 {
+    srand(devid);
+
     SEVPACK SERVER_PACK_INFO[] = {
     {1  ,2 , chkpack_auth  , 0x0111, "认证请求",        PACK_EMPTY},
     {2  ,3 , chkpack_fetch , 0x0211, "取系统信息",      PACK_EMPTY},
@@ -930,6 +938,11 @@ int sub(u_int devid)
             len = recv(sinfo.sockfd, sinfo.recvbuf + sinfo.recvbuf_len, 
                                             RECV_BUFSIZE - sinfo.recvbuf_len, 0);
             if(len == 0){
+                //写入统计信息
+                MYLOG cntlog(CNT_PATH, devid);
+                cntlog.set_std(0);
+                cntlog.set_fle(1);
+                cntlog.cnt_tolog(_sum_tty, _sum_scr);
                 exit(4);//连接被对端关闭
             }
             if(len < 0){
@@ -1011,5 +1024,3 @@ int main(int argc, char** argv)
     }
     return 0;
 }
-
-

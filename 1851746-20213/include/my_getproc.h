@@ -44,7 +44,7 @@ public:
                 break;
             }
         }
-        printf("[%d] test proc get ¡¾%s:%s¡¿\n", getpid(), proc_name, info.c_str());
+        //printf("[%d] test proc get ¡¾%s:%s¡¿\n", getpid(), proc_name, info.c_str());
         fin.close();
         return info;
     }

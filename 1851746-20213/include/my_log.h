@@ -208,7 +208,7 @@ public:
         const int DTSize = 30;
         char DateTime[DTSize] = {0};
         time_t nSeconds = GetDateTime(DateTime);
-        if(tostd){
+        if(true){
             printf("%s [%u] fork子进程开始[%s]", get_time().c_str(), devid, DateTime);
         }
         if(tofle){
@@ -231,7 +231,7 @@ public:
         char DateTime[DTSize] = {0};
         time_t fed_nSeconds = GetDateTime(DateTime);
         
-        if(tostd){
+        if(true){
             printf("%s [%u] fork子进程结束[%s]，总数=%d，耗时=%llu秒\n",
                     get_time().c_str(), devid, DateTime, num, fed_nSeconds-fst_nSeconds);
         }

@@ -290,7 +290,7 @@ struct CSP_TSNIF{
         port =  ttyid;
         sport = ttyid;
         num_sno = snum;
-        printf("[!!!] num_sno=%u\n", snum);
+        //printf("[!!!] num_sno=%u\n", snum);
         live_sno = rand()%(snum);
         
         memset(tty_type, 0, sizeof(tty_type));
@@ -425,8 +425,8 @@ public:
         head.pack_size = ntohs(head.pack_size);
         head.data_size = ntohs(head.data_size);
         head.pad = ntohs(head.pad);
-        printf("[%d] 得到报文头 head_type:0x%02x head_index:0x%02x pack_size:%d data_size:%d\n"
-                , getpid(), head.head_type, head.head_index, head.pack_size, head.data_size);
+        //printf("[%d] 得到报文头 head_type:0x%02x head_index:0x%02x pack_size:%d data_size:%d\n"
+        //        , getpid(), head.head_type, head.head_index, head.pack_size, head.data_size);
         //得到报文数据
         databuf = new (nothrow) u_char[data_size];
         if(!databuf){
@@ -434,14 +434,14 @@ public:
             return false;
         }
         memcpy(databuf, sinfo->recvbuf+pack_size-data_size, data_size);
-        printf("[%d] 得到报文(len:%d) data_first:%02x\n"
-                , getpid(), data_size, databuf[0]);
+        //printf("[%d] 得到报文(len:%d) data_first:%02x\n"
+        //        , getpid(), data_size, databuf[0]);
         //更新recvbuf_len
         sinfo->recvbuf_len -= pack_size;
         if(sinfo->recvbuf_len > 0)
             memmove(sinfo->recvbuf, sinfo->recvbuf + pack_size, sinfo->recvbuf_len);
         //to_log
-        data_tolog("./client_recv.log", data_size);
+        //data_tolog("./client_recv.log", data_size);
         return true;
     }
     //申请包空间

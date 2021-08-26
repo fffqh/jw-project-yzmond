@@ -224,13 +224,13 @@ void fun_waitChild(int no)
     while ((pid = waitpid(0, &sub_status, WNOHANG)) > 0) {        
         _subproc_waitnum++;
         if (WIFEXITED(sub_status)){
-            printf("child %d exit with %d （%s）\n", pid, WEXITSTATUS(sub_status), childexit_to_str(WEXITSTATUS(sub_status)));
+            printf("[%d] child %d exit with %d （%s）\n", getpid(), pid, WEXITSTATUS(sub_status), childexit_to_str(WEXITSTATUS(sub_status)));
             // subprocess_clear_num += 1;
         }
         else if (WIFSIGNALED(sub_status))
-            printf("child %d killed by the %dth signal\n", pid, WTERMSIG(sub_status));
+            printf("[%d] child %d killed by the %dth signal\n", getpid(), pid, WTERMSIG(sub_status));
         
-        printf("[%d] test _subproc_forknum = %d, _subproc_waitnum = %d\n",getpid(), _subproc_forknum, _subproc_waitnum);
+        //printf("[%d] test _subproc_forknum = %d, _subproc_waitnum = %d\n",getpid(), _subproc_forknum, _subproc_waitnum);
         
         if(_subproc_forknum == _subproc_waitnum){
             _fork_end_bool = true; 
@@ -248,11 +248,11 @@ int set_socket_flag(int sockfd, int FLAG)
 {
     int flags;
     if( (flags = fcntl(sockfd, F_GETFL, NULL)) <0){
-        printf("fcntl F_GETFL error:%s(errno: %d) \n", strerror(errno), errno);
+        printf("[%d] fcntl F_GETFL error:%s(errno: %d) \n",getpid(), strerror(errno), errno);
         return -1;
     }
     if( fcntl(sockfd, F_SETFL, flags|FLAG) == -1){
-        printf("fcntl F_SETFL error:%s(errno: %d) \n", strerror(errno), errno);
+        printf("[%d] fcntl F_SETFL error:%s(errno: %d) \n",getpid(), strerror(errno), errno);
         return -1;
     }
     return 1;
@@ -262,11 +262,12 @@ bool create_socket(int & sock_fd, int nonblock = 0)
 {
     if( (sock_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
         //log
-        printf("create socket error: %s(errno: %d)\n", strerror(errno), errno);
+        printf("[%d] create socket error: %s(errno: %d)\n",getpid(), strerror(errno), errno);
         return false;
     }
     if( nonblock && set_socket_flag(sock_fd, O_NONBLOCK) > 0){
-        printf("socket 设置为非阻塞状态成功!\n");
+        //printf("socket 设置为非阻塞状态成功!\n");
+        ;
     }
     return true;
 }
@@ -306,14 +307,14 @@ bool connect_with_limit(int sockfd, int maxc)
             int select_ret = select(sockfd+1, NULL, &writefd_set, NULL, &time_out);
             if(select_ret <= 0){
                 //print_func_ret_err("select_forever", select_ret);
-                printf("第 %d 次连接失败...\n", con_time);
+                printf("[%d]第 %d 次连接失败...\n", getpid(), con_time);
                 continue;
             }
             else if(FD_ISSET(sockfd, &writefd_set)){//到这里不一定成功（接下来如何判断？选择再次调用connect函数来判断）
                 n = connect(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr));
                 n = connect(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr));
                 if(errno != EISCONN){//连接失败
-                    printf("第 %d 次连接失败...\n", con_time);
+                    printf("[%d]第 %d 次连接失败...\n", getpid(), con_time);
                     continue;
                 }
                 else{//连接成功
@@ -321,18 +322,18 @@ bool connect_with_limit(int sockfd, int maxc)
                 }
             }
             else{
-                printf("第 %d 次连接失败...\n", con_time);
+                printf("[%d]第 %d 次连接失败...\n",getpid(), con_time);
             }
         }
 
     }//end of while
     if(con_time >= 5){
-        printf("error:%s(errno:%d)\n", strerror(errno), errno);
-        printf("连接超时，客户端退出。\n");
+        printf("[%d]error:%s(errno:%d)\n",getpid(), strerror(errno), errno);
+        printf("[%d]连接超时，客户端退出。\n",getpid());
         return false;
     }
     //connect成功了！！！
-    printf("连接主机成功，主机ip : %s，端口：%d \n", _conf_ip, _conf_port);
+    printf("[%d]连接主机成功，主机ip : %s，端口：%d \n", getpid(), _conf_ip, _conf_port);
     errno = 0;
     return true;
 }
@@ -510,7 +511,7 @@ bool mkpack_eth(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* net
         //取得当前的包头pad
         netpack->head.pad = CPINFO[i].hpif->head_pad;
         
-        printf("[%d] test in mkpack_eth 当前封包head_pad=0x%x", getpid(), netpack->head.pad);
+        //printf("[%d] test in mkpack_eth 当前封包head_pad=0x%x", getpid(), netpack->head.pad);
         //取得包数据
         CSP_ETHIF pack(netpack->head.pad, sinfo->devid);
         if(!netpack->mk_databuf(sizeof(CSP_ETHIF)))
@@ -594,7 +595,7 @@ bool mkpack_mtsn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* ne
         u_char ttyid = (u_char)(netpack->head.pad);
         //计算 screen_num
         u_char snum = _conf_minsn + rand()%(_conf_maxsn-_conf_minsn + 1);
-        printf("[!!!] snum=%d\n", snum);
+        //printf("[!!!] snum=%d\n", snum);
         //判读缓冲区是否足够
         int data_size = sizeof(CSP_TSNIF) + snum*sizeof(CSP_SNIF);
         if(SEND_BUFSIZE - sinfo->sendbuf_len < 8 + data_size)
@@ -611,7 +612,7 @@ bool mkpack_mtsn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* ne
         //得到ip
         unsigned int d1,d2,d3,d4;
         sscanf(_conf_ip, "%u.%u.%u.%u", &d4, &d3, &d2, &d1);
-        printf("[%d] test _conf_ip 转点分十进制ip d4=%u, d3=%u, d2=%u, d1=%u\n", getpid(), d4,d3,d2,d1);
+        //printf("[%d] test _conf_ip 转点分十进制ip d4=%u, d3=%u, d2=%u, d1=%u\n", getpid(), d4,d3,d2,d1);
         u_int ip = ((d4*1000+d3)*1000+d2)*1000+d1;
         //虚屏包装入
         for(int i = 0; i < (int)snum; ++i){
@@ -646,7 +647,7 @@ bool mkpack_itsn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* ne
         u_char ttyid = (u_char)(netpack->head.pad);
         //计算 screen_num
         u_char snum = _conf_minsn + rand()%(_conf_maxsn-_conf_minsn + 1);
-        printf("[!!!] snum=%d\n", snum);
+        //printf("[!!!] snum=%d\n", snum);
         //判读缓冲区是否足够
         int data_size = sizeof(CSP_TSNIF) + snum*sizeof(CSP_SNIF);
         if(SEND_BUFSIZE - sinfo->sendbuf_len < 8 + data_size)
@@ -663,7 +664,7 @@ bool mkpack_itsn(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* ne
         //得到ip
         unsigned int d1,d2,d3,d4;
         sscanf(_conf_ip, "%u.%u.%u.%u", &d4, &d3, &d2, &d1);
-        printf("[%d] test _conf_ip 转点分十进制ip d4=%u, d3=%u, d2=%u, d1=%u\n", getpid(), d4,d3,d2,d1);
+        //printf("[%d] test _conf_ip 转点分十进制ip d4=%u, d3=%u, d2=%u, d1=%u\n", getpid(), d4,d3,d2,d1);
         u_int ip = ((d4*1000+d3)*1000+d2)*1000+d1;
         //虚屏包装入
         for(int i = 0; i < (int)snum; ++i){
@@ -784,7 +785,7 @@ bool chkpack_err (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* n
 //主接口
 void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 {
-    printf("[%d] （pack检查前）当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
+    //printf("[%d] （pack检查前）当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
     //检查是否需要封包
     for(int i = 0; CPINFO[i].no!=-99; ++i){
         if(CPINFO[i].status == PACK_UNDO){ //需要封包
@@ -795,13 +796,13 @@ void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
                 CPINFO[i].status = PACK_EMPTY; //已成功封包
         }
     }
-    printf("[%d] （pack检查后）当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
+    //printf("[%d] （pack检查后）当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
     return;
 }
 void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
 {
     while(1){
-        printf("[%d] （unpack检查前）当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
+        //printf("[%d] （unpack检查前）当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
         //判断是否进行解包：recvbuf_len大于最小包大小（只含报文头）
         if(sinfo->recvbuf_len < 8)
             return;
@@ -835,7 +836,7 @@ void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO)
         NETPACK pack;
         if(!pack.dwload(sinfo, pack_size, data_size))
             return; //解包失败
-        printf("[%d] 解包结束! 当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
+        //printf("[%d] 解包结束! 当前recvbuf大小: %d\n", getpid(), sinfo->recvbuf_len);
         
         //tolog
         ostringstream intfbuf;
@@ -918,12 +919,12 @@ int sub(u_int devid)
         if(sinfo.sendbuf_len > 0) //写缓冲区有内容时，置写fd
             FD_SET(sinfo.sockfd, &wfd_set);
         //test
-        printf("[%d] test wfd:%d\n", getpid(), FD_ISSET(sinfo.sockfd, &wfd_set));
-        printf("[%d] test rfd:%d\n", getpid(), FD_ISSET(sinfo.sockfd, &rfd_set));
+        //printf("[%d] test wfd:%d\n", getpid(), FD_ISSET(sinfo.sockfd, &wfd_set));
+        //printf("[%d] test rfd:%d\n", getpid(), FD_ISSET(sinfo.sockfd, &rfd_set));
 
         maxfd = sinfo.sockfd + 1;
         sel = select(maxfd, &rfd_set, &wfd_set, NULL, NULL/*暂时为无限长的等待时间*/);
-        printf("[%d] --- --- --- --- test select 返回 --- --- --- --- --- ---\n", getpid());
+        //printf("[%d] --- --- --- --- test select 返回 --- --- --- --- --- ---\n", getpid());
         //读
         if( sel>0 && FD_ISSET(sinfo.sockfd, &rfd_set)){
             len = recv(sinfo.sockfd, sinfo.recvbuf + sinfo.recvbuf_len, 
@@ -949,7 +950,7 @@ int sub(u_int devid)
             if(sinfo.sendbuf_len > 0){//将剩余数据前移
                 memmove(sinfo.sendbuf, sinfo.sendbuf + len, sinfo.sendbuf_len);
             }
-            printf("[%d] 发送字节数:%d，senbuf_len:%d\n", getpid(), len, sinfo.sendbuf_len);
+            //printf("[%d] 发送字节数:%d，senbuf_len:%d\n", getpid(), len, sinfo.sendbuf_len);
         }
         //错误
         if(sel < 0){

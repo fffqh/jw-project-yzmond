@@ -232,7 +232,7 @@ public:
         time_t fed_nSeconds = GetDateTime(DateTime);
         
         if(true){
-            printf("%s [%u] fork子进程结束[%s]，总数=%d，耗时=%llu秒\n",
+            printf("%s [%u] fork子进程结束[%s]，总数=%d，耗时=%ld秒\n",
                     get_time().c_str(), devid, DateTime, num, fed_nSeconds-fst_nSeconds);
         }
     
@@ -243,7 +243,7 @@ public:
                 printf("[%d] mylog::fed_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
                 return fed_nSeconds;
             }
-            fprintf(fp, "%s [%u] fork子进程结束[%s]，总数=%d，耗时=%llu秒\n",
+            fprintf(fp, "%s [%u] fork子进程结束[%s]，总数=%d，耗时=%ld秒\n",
                     get_time().c_str(), devid, DateTime, num, fed_nSeconds-fst_nSeconds);
 
             fclose(fp);           

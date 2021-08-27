@@ -369,6 +369,11 @@ struct CSP_SNIF{
         //svr_ip = htonl(ip);
         memcpy(&svr_ip, ip, 4);
         
+        memset(sn_pto, 0, sizeof(sn_pto));
+        memset(sn_state, 0, sizeof(sn_state));
+        memset(sn_info, 0, sizeof(sn_info));
+        memset(sn_ttyty, 0, sizeof(sn_ttyty));
+        
         rand_index = rand() % PTONUM;
         memcpy(sn_pto, PTO[rand_index], string(PTO[rand_index]).length());
         rand_index = rand() % STANUM;

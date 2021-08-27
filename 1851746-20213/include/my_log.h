@@ -95,6 +95,40 @@ public:
         devid = index;
     }
     
+    bool sif_tolog()
+    {
+        PROCINFO pinfo_cpu_op("/proc/stat", "cpu");
+        PROCINFO pinfo_mem_op("/proc/meminfo", "mem");
+        char sys_info_buf[100];
+        sprintf(sys_info_buf, "系统当前内存占用率(%.2lf%%)/CPU占用率(%.2lf%%)"
+                ,  pinfo_mem_op.get_mem_op(), pinfo_cpu_op.get_cpu_op());
+        
+        if(tostd){
+            printf("%s [%u] %s\n", get_time().c_str(), devid, sys_info_buf);
+        }
+
+        if(tofle){
+            FILE* fp = NULL;
+            fp = fopen(log_path, "a"); //追加写
+            if(!fp){
+                printf("[%d] mylog::rw_tolog failed！文件打开失败（%s）\n", getpid(), log_path);
+                return false;
+            }
+            //对文件加写锁
+            int ifd = fileno(fp);
+            if(flock(ifd, LOCK_EX)!=0){
+                printf("[%d] 文件加锁失败，可能出现数据错误(%s)!\n", getpid(), log_path);
+            }
+            fprintf(fp, "%s [%u] %s\n", get_time().c_str(), devid, sys_info_buf);
+            //解锁
+            if(flock(ifd, LOCK_UN)!=0){
+                printf("[%u] 文件解锁失败，可能出现错误（%s）\n", getpid(), log_path);
+            }
+            fclose(fp);       
+        }
+
+        return true;
+    }
     bool rw_tolog(int dir, int len)
     {
         if(tostd){
@@ -223,7 +257,6 @@ public:
         if(tostd){
             printf("%s [%u] %s\n", get_time().c_str(), devid, str);
         }
-        
         if(tofle){
             FILE* fp = NULL;
             fp = fopen(log_path, "a"); //追加写
@@ -243,7 +276,6 @@ public:
             }            
             fclose(fp);
         }
-
         return true;
     }
     bool pack_tolog(int dir, const char* intf, int len=0)
@@ -314,6 +346,7 @@ public:
         }
         return true;
     }
+
 
     time_t fst_tolog()
     {

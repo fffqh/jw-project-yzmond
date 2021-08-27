@@ -19,6 +19,7 @@ public:
         proc_path = path;
         proc_name = name;
     }
+    //得到 proc_path 中的 proc_name 行的信息
     string get()
     {
         string info = "";
@@ -48,6 +49,34 @@ public:
         fin.close();
         return info;
     }
+    //得到cpu使用率信息，proc_path=/proc/stat，proc_name = cpu
+    double get_cpu_op()
+    {
+        double cpu_op;        
+        string cpuinfo = get();
+        if(cpuinfo == "")
+            return -1;
+        
+        char buf[5]; unsigned long long ut, nt, st, it;
+        sscanf(cpuinfo.c_str(), " %s %llu %llu %llu %llu", buf, &ut, &nt, &st, &it);
+        if(ut+nt+st+it<=0)
+            return -1;    
+        cpu_op = ((double)(ut+st)/(ut+nt+st+it)) * 100;
+        return cpu_op;
+    }
+    //得到内存占用率信息，proc_path=任意，proc_name = 任意
+    double get_mem_op()
+    {
+        PROCINFO pinfo_ram("/proc/meminfo", "MemTotal");
+        PROCINFO pinfo_free("/proc/meminfo", "MemFree");
+        unsigned long long ram, free;
+        sscanf(pinfo_ram.get().c_str(), " %llu", &ram);
+        sscanf(pinfo_free.get().c_str(), " %llu", &free);
+        if(!ram)
+            return -1;
+        return ((double)(ram-free)/ram)*100;
+    }
+
 };
 
 #endif

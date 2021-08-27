@@ -50,9 +50,7 @@ using namespace std;
 #define _DEBUG_SDATA  (_conf_debug/10%2)
 #define _DEBUG_RDATA  (_conf_debug%2)
 
-
 //#define LIMIT_PN_WT 100 //进程数量超过时，开始进行资源监控
-
 
 //配置参数（文件取得）
 char _conf_ip[16] = "192.168.1.242";//
@@ -167,20 +165,20 @@ bool read_conf()
 //print_conf: 打印配置参数
 void print_conf()
 {
-    printf("[%d] \n=========== 打印所有配置参数 ==========\n", getpid());
-    printf("_conf_ip = %s\n", _conf_ip);
-    printf("_conf_port   = %d\n",  _conf_port  );
-    printf("_conf_quit   = %d\n",  _conf_quit  );
-    printf("_conf_mindn  = %d\n",  _conf_mindn );
-    printf("_conf_maxdn  = %d\n",  _conf_maxdn );
-    printf("_conf_minsn  = %d\n",  _conf_minsn );
-    printf("_conf_maxsn  = %d\n",  _conf_maxsn );
-    printf("_conf_newlog = %d\n",  _conf_newlog);
-    printf("_conf_debug  = %d\n",  _conf_debug );
-    printf("_conf_dprint = %d\n",  _conf_dprint);
-    printf("_conf_isarm  = %d\n",  _conf_isarm);
-    printf("_conf_isforkprint = %d\n",  _conf_isforkprint);
-    printf("=========================================\n");
+    printf("[%d] \n============= 打印所有配置参数 =============\n", getpid());
+    printf("[ 服务器IP地址         ]  = %s\n",  _conf_ip);
+    printf("[ 端口号               ]  = %d\n",  _conf_port  );
+    printf("[ 进程接收成功后退出   ]  = %d\n",  _conf_quit  );
+    printf("[ 最小配置终端数量     ]  = %d\n",  _conf_mindn );
+    printf("[ 最大配置终端数量     ]  = %d\n",  _conf_maxdn );
+    printf("[ 每个终端最小虚屏数量 ]  = %d\n",  _conf_minsn );
+    printf("[ 每个终端最大虚屏数量 ]  = %d\n",  _conf_maxsn );
+    printf("[ 删除日志文件         ]  = %d\n",  _conf_newlog);
+    printf("[ DEBUG设置            ]  = %d\n",  _conf_debug );
+    printf("[ DEBUG屏幕显示        ]  = %d\n",  _conf_dprint);
+    printf("[ 是否为ARM            ]  = %d\n",  _conf_isarm);
+    printf("[ 是否打印fork情况     ]  = %d\n",  _conf_isforkprint);
+    printf("=============================================\n");
     return;
 }
 
@@ -219,13 +217,15 @@ void fun_waitChild(int no)
     while ((pid = waitpid(0, &sub_status, WNOHANG)) > 0) {        
         _subproc_waitnum++;
         if (WIFEXITED(sub_status)){
-            //printf("[%d] child %d exit with %d （%s）\n", getpid(), pid, WEXITSTATUS(sub_status), childexit_to_str(WEXITSTATUS(sub_status)));
-            // subprocess_clear_num += 1;
+            char buf[256];
+            snprintf(buf, 255, "[%d] child %d exit with %d （%s）\n", getpid(), pid, WEXITSTATUS(sub_status), childexit_to_str(WEXITSTATUS(sub_status)));
+            if(_DEBUG_ERR) _mylog.str_tolog(buf);
         }
-        else if (WIFSIGNALED(sub_status))
-            printf("[%d] child %d killed by the %dth signal\n", getpid(), pid, WTERMSIG(sub_status));
-        
-        //printf("[%d] test _subproc_forknum = %d, _subproc_waitnum = %d\n",getpid(), _subproc_forknum, _subproc_waitnum);
+        else if (WIFSIGNALED(sub_status)){
+            char buf[256];
+            snprintf(buf, 255, "[%d] child %d killed by the %dth signal\n", getpid(), pid, WTERMSIG(sub_status));
+            if(_DEBUG_ERR) _mylog.str_tolog(buf);
+        }
         
         if(_subproc_forknum == _subproc_waitnum){
             _fork_end_bool = true; 
@@ -597,17 +597,14 @@ int main(int argc, char** argv)
         //全局变量初始化
         _subproc_waitnum = 0;
         _subproc_forknum = 0;
-        //log: fork子进程开始！
-        
-        if(!_DEBUG_ENV)
-            _mylog.set_fle(0);
-        if( _conf_isforkprint )
-            _mylog.set_std(1);        
+      
+        //log: 系统资源 & fork子进程开始！
+        if(!_DEBUG_ENV) _mylog.set_fle(0);
+        if( _conf_isforkprint ) _mylog.set_std(1);
+        _mylog.sif_tolog();
         fst_nSeconds = _mylog.fst_tolog();
-        if(!_DEBUG_ENV)
-            _mylog.set_fle(1);
-        if( _conf_isforkprint )
-            _mylog.set_std(_conf_dprint);
+        if(!_DEBUG_ENV) _mylog.set_fle(1);
+        if( _conf_isforkprint ) _mylog.set_std(_conf_dprint);
         
         //分裂 devnum 个子进程
         for(int i = 0; i < _devnum; ++i){
@@ -620,8 +617,12 @@ int main(int argc, char** argv)
                 exit( sub(_devid + i) ); //子进程的运行及返回
             }
 
-            if( _conf_isforkprint && !(i % _conf_isforkprint))
-                printf("[%u] 当前已分裂/已回收进程数 = %lu/%lu\n", getpid(), _subproc_forknum, _subproc_waitnum);
+            if( i && _conf_isforkprint && !(i % _conf_isforkprint)){
+                //PROCINFO pinfo_cpu_op("/proc/stat", "cpu");
+                //PROCINFO pinfo_mem_op("/proc/meminfo", "mem");
+                printf("[%u] 当前已分裂/已回收进程数 = %lu/%lu \n", getpid(), _subproc_forknum, _subproc_waitnum);
+                //printf("系统当前内存占用率(%.2lf%%)/CPU占用率(%.2lf%%)\n" ,pinfo_mem_op.get_mem_op(), pinfo_cpu_op.get_cpu_op());
+            }
             watch();
             
             _subproc_forknum++;
@@ -651,31 +652,9 @@ int main(int argc, char** argv)
         if(_conf_quit)
             break;
         if(_DEBUG_ENV)
-            _mylog.str_tolog("一次数据发送结束，5秒后继续重复进行.....");        
+            _mylog.str_tolog("一次数据发送结束，继续重复进行...");        
         sleep(5);
     }
     return 0;
 }
-
-
-/************
-struct sysinfo {
-      long uptime;          // 启动到现在经过的时间 
-      unsigned long loads[3];  
-      // 1, 5, and 15 minute load averages 
-      unsigned long totalram;  // 总的可用的内存大小 
-      unsigned long freeram;   // 还未被使用的内存大小
-      unsigned long sharedram; // 共享的存储器的大小
-      unsigned long bufferram; // 共享的存储器的大小 
-      unsigned long totalswap; // 交换区大小 
-      unsigned long freeswap;  // 还可用的交换区大小 
-      unsigned short procs;    // 当前进程数目 
-      unsigned long totalhigh; // 总的高内存大小 
-      unsigned long freehigh;  // 可用的高内存大小 
-      unsigned int mem_unit;   // 以字节为单位的内存大小 
-      char _f[20-2*sizeof(long)-sizeof(int)]; 
-      // libc5的补丁
-}
-*/
-
 

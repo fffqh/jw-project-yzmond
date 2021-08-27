@@ -435,9 +435,8 @@ public:
         pack->vno_main = ntohs(pack->vno_main);
         pack->dt_fail = ntohs(pack->dt_fail);
         pack->dt_succ = ntohs(pack->dt_succ);
-        pack->random_num = ntohs(pack->random_num);
-        pack->svr_time = ntohs(pack->svr_time);
-
+        pack->random_num = ntohl(pack->random_num);
+        pack->svr_time = ntohl(pack->svr_time);
 
         //验证与处理    
         //1、认证串解密
@@ -445,9 +444,31 @@ public:
             close(sinfo->sockfd);
             exit(8); //认证非法
         }
+        
+        //服务器时间与连接、采用间隔写日志
+        time_t svr_time = pack->svr_time;
+        struct tm* pTM = localtime(&(svr_time));
+        if(_DEBUG_ENV){
+            char stlog_buf[100];
+
+            snprintf(stlog_buf, 99, "收到服务器的时间：%04d-%02d-%02d %02d:%02d:%02d",
+                    pTM->tm_year + 1900, pTM->tm_mon + 1, pTM->tm_mday,
+                    pTM->tm_hour, pTM->tm_min, pTM->tm_sec);
+            _mylog.str_tolog(stlog_buf);
+
+            snprintf(stlog_buf, 99, "收到连接间隔=%u/采样间隔=%u", pack->dt_fail, pack->dt_succ);
+            _mylog.str_tolog(stlog_buf);
+        }
+
         //2、数字证书检查
-        struct tm chk_tm = {2017-1900, 0, 0, 0, 0, 0};
-        u_int chk_time = mktime(&chk_tm);
+        struct tm chk_tm;// 2017-1-1 00:00:00;
+        chk_tm.tm_year = 2017 - 1900;
+        chk_tm.tm_mon  = 0;
+        chk_tm.tm_mday = 1;
+        chk_tm.tm_hour = 0;
+        chk_tm.tm_min  = 0;
+        chk_tm.tm_sec  = 0;        
+        time_t chk_time = mktime(&chk_tm);     
         if(pack->svr_time < chk_time){
             close(sinfo->sockfd);
             exit(7);//数字证书过期

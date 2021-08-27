@@ -331,10 +331,10 @@ public:
             memcpy(netpack->databuf, &pack, sizeof(pack));
             databuf_p += sizeof(pack);
             //得到ip
-            unsigned int d1,d2,d3,d4;
-            sscanf(_conf_ip, "%u.%u.%u.%u", &d4, &d3, &d2, &d1);
+            unsigned char d1,d2,d3,d4;
+            sscanf(_conf_ip, "%hhu.%hhu.%hhu.%hhu", &d4, &d3, &d2, &d1);
             //printf("[%d] test _conf_ip 转点分十进制ip d4=%u, d3=%u, d2=%u, d1=%u\n", getpid(), d4,d3,d2,d1);
-            u_int ip = ((d4*1000+d3)*1000+d2)*1000+d1;
+            u_char ip[4] = {d4,d3,d2,d1};
             //虚屏包装入
             for(int i = 0; i < (int)snum; ++i){
                 CSP_SNIF snpack((u_char)(i+1), (u_short)_conf_port, ip);
@@ -386,10 +386,10 @@ public:
             memcpy(netpack->databuf, &pack, sizeof(pack));
             databuf_p += sizeof(pack);
             //得到ip
-            unsigned int d1,d2,d3,d4;
-            sscanf(_conf_ip, "%u.%u.%u.%u", &d4, &d3, &d2, &d1);
+            unsigned char d1,d2,d3,d4;
+            sscanf(_conf_ip,"%hhu.%hhu.%hhu.%hhu", &d4, &d3, &d2, &d1);
             //printf("[%d] test _conf_ip 转点分十进制ip d4=%u, d3=%u, d2=%u, d1=%u\n", getpid(), d4,d3,d2,d1);
-            u_int ip = ((d4*1000+d3)*1000+d2)*1000+d1;
+            u_char ip[4] = {d4,d3,d2,d1};
             //虚屏包装入
             for(int i = 0; i < (int)snum; ++i){
                 CSP_SNIF snpack((u_char)(i+1), (u_short)_conf_port, ip);

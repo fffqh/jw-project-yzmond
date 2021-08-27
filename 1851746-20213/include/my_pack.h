@@ -215,18 +215,21 @@ struct CSP_ETHIF{
         // 100MB + 全双工 + 自动协商
         options = htons(0x0007); 
         // ip + mask
-        ipaddr = htonl((((u_int)(devid%100)*1000 + 168)*1000 + 89)*1000 + 99);
-        ipaddr_1 = htonl((((u_int)(devid%100)*1000 + 168)*1000 + 89)*1000 + 1);
-        ipaddr_2 = htonl((((u_int)(devid%100)*1000 + 168)*1000 + 89)*1000 + 2);
-        ipaddr_3 = htonl((((u_int)(devid%100)*1000 + 168)*1000 + 89)*1000 + 3);
-        ipaddr_4 = htonl((((u_int)(devid%100)*1000 + 168)*1000 + 89)*1000 + 4);
-        ipaddr_5 = htonl((((u_int)(devid%100)*1000 + 168)*1000 + 89)*1000 + 5);
-        mask = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
-        mask_1 = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
-        mask_2 = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
-        mask_3 = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
-        mask_4 = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
-        mask_5 = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
+        u_char ipbuf[4];
+        ipbuf[0] = devid%100; ipbuf[1] = 168; ipbuf[2] = 89; ipbuf[3] = 100;
+        memcpy(&ipaddr, ipbuf, sizeof(ipbuf));
+        ipaddr_1 = ipaddr;
+        ipaddr_2 = ipaddr;
+        ipaddr_3 = ipaddr;
+        ipaddr_4 = ipaddr;
+        ipaddr_5 = ipaddr;
+        ipbuf[0] = 255; ipbuf[1] = 255; ipbuf[2] = 255; ipbuf[3] = 0;
+        memcpy(&mask, ipbuf, sizeof(ipbuf));
+        mask_1 = mask;
+        mask_2 = mask;
+        mask_3 = mask;
+        mask_4 = mask;
+        mask_5 = mask;
         
         char proc_name[8] = {0};
         if(hpad == 0x0000){
@@ -316,7 +319,9 @@ struct CSP_TSNIF{
         memset(tty_state, 0, sizeof(tty_state));
         
         if(isip){
-            ttyip = htonl((u_int)192168089000 + ttyid); //192.168.89.x
+            u_char ipbuf[4] = {192, 168, 89, ttyid};
+            memcpy(&ttyip, ipbuf, sizeof(ipbuf));
+            //ttyip = htonl((u_int)192168089000 + ttyid); //192.168.89.x
             memcpy(tty_type, "IP终端", sizeof("IP终端")); 
         }else{
             ttyip = htonl(0);
@@ -348,7 +353,7 @@ struct CSP_SNIF{
     u_int   ping_min;
     u_int   ping_avg;
     u_int   ping_max;
-    CSP_SNIF(u_char id, u_short port, u_int ip){
+    CSP_SNIF(u_char id, u_short port, const u_char* ip){
         const char* PTO[] = {"SSH", "专用SSH", "FTP"};
         const int PTONUM = 3;
         const char* STA[] = {"开机", "关机", "已登录"};
@@ -361,8 +366,9 @@ struct CSP_SNIF{
         int rand_index = 0;
         snid = id;
         svr_port = htons(port);
-        svr_ip = htonl(ip);
-
+        //svr_ip = htonl(ip);
+        memcpy(&svr_ip, ip, 4);
+        
         rand_index = rand() % PTONUM;
         memcpy(sn_pto, PTO[rand_index], string(PTO[rand_index]).length());
         rand_index = rand() % STANUM;

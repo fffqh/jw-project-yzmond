@@ -437,7 +437,7 @@ bool watch()
 /******** 主/子进程控制 ********/
 int sub(u_int devid)
 {
-    srand(devid);
+    srand(devid + time(NULL)%devid);
 
     SEVPACK SERVER_PACK_INFO[] = {
     {1  ,2 , &CLT_PACK_ACTION::chkpack_auth  , 0x0111, "认证请求",        PACK_EMPTY},

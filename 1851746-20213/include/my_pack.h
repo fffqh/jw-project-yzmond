@@ -120,9 +120,11 @@ struct CSP_AUTH{
         MTotal = htons(in_MTotal);
         ROM = htons(581);
         dev_inid = htons(1746);
+
         memcpy(dev_gid, "fanqianhui", sizeof("fanqianhui"));
         memcpy(dev_tid, "fqh-6471581", sizeof("fqh-6471581"));
         memcpy(dev_vid, "Ver:1746", sizeof("Ver:1746"));
+        
         ethnum    =  1 + in_devid%2;
         syncnum   = 0;
         asyncnum  = ((in_devid/10) % 3)*8;
@@ -373,7 +375,7 @@ struct CSP_SNIF{
         memset(sn_state, 0, sizeof(sn_state));
         memset(sn_info, 0, sizeof(sn_info));
         memset(sn_ttyty, 0, sizeof(sn_ttyty));
-        
+
         rand_index = rand() % PTONUM;
         memcpy(sn_pto, PTO[rand_index], string(PTO[rand_index]).length());
         rand_index = rand() % STANUM;

@@ -214,7 +214,7 @@ void fun_waitChild(int no)
 {
     int sub_status;
     pid_t pid;
-    while ((pid = waitpid(0, &sub_status, WNOHANG)) > 0) {        
+    while ((pid = waitpid(-1, &sub_status, WNOHANG)) > 0) {        
         _subproc_waitnum++;
         if (WIFEXITED(sub_status)){
             char buf[256];
@@ -421,15 +421,11 @@ bool watch()
             printf("[%d] watch 资源监控失败！\n", getpid());
             return false;
         }
-        // printf("[%u] watch: totalram  = %lu\n", getpid(), mysysif.totalram );
-        // printf("[%u] watch: freeram   = %lu\n", getpid(), mysysif.freeram  );
-        // printf("[%u] watch: sharedram = %lu\n", getpid(), mysysif.sharedram);
-        // printf("[%u] watch: bufferram = %lu\n", getpid(), mysysif.bufferram);
-        // printf("[%u] watch: freeswap  = %lu\n", getpid(), mysysif.freeswap );
-        // printf("[%u] watch: procs     = %d\n", getpid(), mysysif.procs    );
         if( _subproc_forknum - _subproc_waitnum < 200)
             break;
-        
+        sleep(1);
+        printf("等待中... 当前 fork=%lu wait=%lu \n", _subproc_forknum, _subproc_waitnum);
+    
     }
     return true;
 }
@@ -657,4 +653,7 @@ int main(int argc, char** argv)
     }
     return 0;
 }
+
+
+
 

@@ -65,6 +65,9 @@ int  _conf_maxsn  = 10;//
 bool _conf_newlog = 1;//
 int  _conf_debug  = 111111;//..
 int  _conf_dprint = 1;//
+int  _conf_isarm  = 0;//
+int  _conf_isforkprint = 0;//
+
 //运行参数（命令行取得）
 int  _devid;
 int  _devnum;
@@ -110,6 +113,8 @@ bool read_conf()
         {CFITEM_NONE, "删除日志文件", ""},
         {CFITEM_NONE, "DEBUG设置", ""},
         {CFITEM_NONE, "DEBUG屏幕显示", ""},
+        {CFITEM_NONE, "是否为ARM", ""},
+        {CFITEM_NONE, "是否打印fork情况",""},
         {CFITEM_NONE, NULL, ""}
     };
     CONFINFO conf_info(CONF_PATH, " \t", "#", conf_item);
@@ -125,9 +130,9 @@ bool read_conf()
         }else if(!strcmp(conf_item[i].name,"端口号")){
             _conf_port = atoi(conf_item[i].data.c_str());
         }else if(!strcmp(conf_item[i].name,"进程接收成功后退出")){
-            printf("[%u] !!!test quit_name = %s\n", getpid(), conf_item[i].name);
-            printf("[%u] !!!test quit_state = %d\n", getpid(), conf_item[i].status);
-            printf("[%u] !!!test quit_str = %s\n", getpid(), conf_item[i].data.c_str());
+            //printf("[%u] !!!test quit_name = %s\n", getpid(), conf_item[i].name);
+            //printf("[%u] !!!test quit_state = %d\n", getpid(), conf_item[i].status);
+            //printf("[%u] !!!test quit_str = %s\n", getpid(), conf_item[i].data.c_str());
             _conf_quit = !!atoi(conf_item[i].data.c_str());
         }else if(!strcmp(conf_item[i].name,"最小配置终端数量")){
             _conf_mindn = atoi(conf_item[i].data.c_str());
@@ -151,6 +156,10 @@ bool read_conf()
             _conf_debug = atoi(conf_item[i].data.c_str());
         }else if(!strcmp(conf_item[i].name,"DEBUG屏幕显示")){
             _conf_dprint= atoi(conf_item[i].data.c_str());
+        }else if(!strcmp(conf_item[i].name, "是否为ARM")){
+            _conf_isarm = atoi(conf_item[i].data.c_str());
+        }else if(!strcmp(conf_item[i].name, "是否打印fork情况")){
+            _conf_isforkprint = atoi(conf_item[i].data.c_str());
         }
     }
     return true;
@@ -158,7 +167,7 @@ bool read_conf()
 //print_conf: 打印配置参数
 void print_conf()
 {
-    printf("[%d] =========== 打印所有配置参数 ==========\n", getpid());
+    printf("[%d] \n=========== 打印所有配置参数 ==========\n", getpid());
     printf("_conf_ip = %s\n", _conf_ip);
     printf("_conf_port   = %d\n",  _conf_port  );
     printf("_conf_quit   = %d\n",  _conf_quit  );
@@ -169,6 +178,8 @@ void print_conf()
     printf("_conf_newlog = %d\n",  _conf_newlog);
     printf("_conf_debug  = %d\n",  _conf_debug );
     printf("_conf_dprint = %d\n",  _conf_dprint);
+    printf("_conf_isarm  = %d\n",  _conf_isarm);
+    printf("_conf_isforkprint = %d\n",  _conf_isforkprint);
     printf("=========================================\n");
     return;
 }
@@ -333,6 +344,7 @@ void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, CLT_PACK_ACTION* P
     //printf("[%d] （pack检查前）当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
     //检查是否需要封包
     for(int i = 0; CPINFO[i].no!=-99; ++i){
+        //printf("PackName=%s, PackStatus=%d\n", CPINFO[i].str, CPINFO[i].status);
         if(CPINFO[i].status == PACK_UNDO){ //需要封包
             NETPACK pack(CPINFO[i].head);
             //printf("[%d] 检查pack%d\n", getpid(), CPINFO[i].no);
@@ -576,6 +588,7 @@ int main(int argc, char** argv)
     //是否删除原日志
     if(_conf_newlog){
         remove(LOG_PATH);
+        remove(CNT_PATH);
     }
     //初始化log
     (_conf_dprint == 1)? _mylog.set_std(1) : _mylog.set_std(0);
@@ -585,8 +598,17 @@ int main(int argc, char** argv)
         _subproc_waitnum = 0;
         _subproc_forknum = 0;
         //log: fork子进程开始！
-        if(_DEBUG_ENV)
-            fst_nSeconds = _mylog.fst_tolog();
+        
+        if(!_DEBUG_ENV)
+            _mylog.set_fle(0);
+        if( _conf_isforkprint )
+            _mylog.set_std(1);        
+        fst_nSeconds = _mylog.fst_tolog();
+        if(!_DEBUG_ENV)
+            _mylog.set_fle(1);
+        if( _conf_isforkprint )
+            _mylog.set_std(_conf_dprint);
+        
         //分裂 devnum 个子进程
         for(int i = 0; i < _devnum; ++i){
             pid_t pid = fork();
@@ -597,21 +619,30 @@ int main(int argc, char** argv)
             else if(pid == 0){//child
                 exit( sub(_devid + i) ); //子进程的运行及返回
             }
-            //
-            printf("[%u] 当前已分裂/已回收进程数 = %lu/%lu\n", getpid(), _subproc_forknum, _subproc_waitnum);
+
+            if( _conf_isforkprint && !(i % _conf_isforkprint))
+                printf("[%u] 当前已分裂/已回收进程数 = %lu/%lu\n", getpid(), _subproc_forknum, _subproc_waitnum);
             watch();
+            
             _subproc_forknum++;
         }
         //主进程睡眠
         while(1){
             if(_fork_end_bool){
-                printf("[%d] test fork_end !!!\n", getpid());
+                //printf("[%d] test fork_end !!!\n", getpid());
                 //log: fork&wait 情况反馈
-                if(_DEBUG_ENV)
-                    _mylog.fork_tolog(_subproc_forknum, _subproc_waitnum);
-                //log: fork end!
-                if(_DEBUG_ENV)
-                    fed_nSeconds = _mylog.fed_tolog(fst_nSeconds, _subproc_forknum);
+                if(!_DEBUG_ENV)
+                    _mylog.set_fle(0);
+                if(_conf_isforkprint)
+                    _mylog.set_std(1);
+                
+                _mylog.fork_tolog(_subproc_forknum, _subproc_waitnum);
+                fed_nSeconds = _mylog.fed_tolog(fst_nSeconds, _subproc_forknum);
+                if(!_DEBUG_ENV)
+                    _mylog.set_fle(1);
+                if(_conf_isforkprint)
+                    _mylog.set_std(_conf_dprint);
+
                 _fork_end_bool = false;
                 break;
             }

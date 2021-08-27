@@ -31,6 +31,7 @@ using namespace std;
 
 extern MYLOG _mylog;
 extern int  _conf_debug;
+extern int  _conf_isarm;
 
 
 // __HEAD_PACK
@@ -227,9 +228,12 @@ struct CSP_ETHIF{
         mask_4 = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
         mask_5 = htonl((((u_int)(255*1000 + 255)*1000 + 255)*1000 + 0));
         
-        char proc_name[6] = {0};
+        char proc_name[8] = {0};
         if(hpad == 0x0000){
-            memcpy(proc_name, "ens32", 5);
+            if(_conf_isarm)
+               memcpy(proc_name, "enp4s0", 6);
+            else
+               memcpy(proc_name, "ens32", 5);
         }else if(hpad == 0x0001){
             memcpy(proc_name, "lo", 2);
         }else{
@@ -239,6 +243,9 @@ struct CSP_ETHIF{
         //recv+send
         PROCINFO pinfo("/proc/net/dev", proc_name);
         string eth_info = pinfo.get();
+        if(eth_info == ""){
+            printf("[%d] /proc/net/dev ∂¡»° ß∞‹!\n", getpid());
+        }
         istringstream info(eth_info);
         u_int d;
         for(int i = 0; i < 16; ++i){

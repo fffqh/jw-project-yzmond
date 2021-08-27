@@ -33,6 +33,7 @@ extern int  _conf_maxsn ;
 extern bool _conf_newlog;
 extern int  _conf_debug ;
 extern int  _conf_dprint;
+extern int  _conf_isarm;
 
 extern int  _devid;
 extern int  _devnum;
@@ -72,13 +73,13 @@ struct CLTPACK{
 class CLT_PACK_ACTION{
 public:
     SOCK_INFO* sinfo;
-    SEVPACK* SPINFO;
-    CLTPACK* CPINFO;
+    SEVPACK* SINFO;
+    CLTPACK* CINFO;
     CLT_PACK_ACTION(SOCK_INFO* s,SEVPACK* SP,CLTPACK* CP)
     {
         sinfo = s;
-        SPINFO = SP;
-        CPINFO = CP;
+        SINFO = SP;
+        CINFO = CP;
     }
     //客户端：解包拆包并进行相应处理的函数
     bool mkpack_vno(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
@@ -104,15 +105,23 @@ public:
         //检查缓冲区空间是否足够
         if(SEND_BUFSIZE - sinfo->sendbuf_len < 8+(int)sizeof(CSP_AUTH))
             return false;
-        // printf("[%d] 封包pack_auth\n", getpid());  
+        //printf("[%d] 封包pack_auth\n", getpid());  
 
-        PROCINFO pinfo_cpuMHz("/proc/cpuinfo", "cpu MHz");
+        char cpuMHzName[12];
+        memset(cpuMHzName,  0, sizeof(cpuMHzName));
+        if(_conf_isarm)
+            memcpy(cpuMHzName, "BogoMIPS", 8);
+        else
+            memcpy(cpuMHzName, "cpu MHz", 7);
+        
+        PROCINFO pinfo_cpuMHz("/proc/cpuinfo", cpuMHzName);
         PROCINFO pinfo_MTotal("/proc/meminfo", "MemTotal");
         string cpuMHz = pinfo_cpuMHz.get();
         string MTotal = pinfo_MTotal.get();   
-        if(MTotal == "" || cpuMHz == "")
+        if(MTotal == "" || cpuMHz == ""){
+            printf("[%u] /proc/cpuinfo /proc/meminfo 读取错误!\n", getpid());
             return false;
-        
+        }
         CSP_AUTH pack((u_short)(atoi(cpuMHz.c_str())),(u_short)(((double)(atoi(MTotal.c_str())))/1024), sinfo->devid);
         //将pack加密
         u_int random_num;
@@ -127,7 +136,7 @@ public:
         if(!netpack->upload(sinfo))
             return false;
         //_mylog.pack_tolog(DIR_SEND, "发认证串及基本配置信息", 8 + sizeof(pack));
-        // printf("[%d] 封包pack_auth成功结束！\n", getpid());  
+        //printf("[%d] 封包pack_auth成功结束！\n", getpid());  
         
         return true;
     }
@@ -421,6 +430,7 @@ public:
 
     bool chkpack_auth (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)
     {
+        //printf("[%d] test enter chkpack_auth\n", getpid());
         SCP_AUTH * pack = (SCP_AUTH*) netpack->databuf;
         pack->vno_main = ntohs(pack->vno_main);
         pack->dt_fail = ntohs(pack->dt_fail);
@@ -455,11 +465,12 @@ public:
 
         for(int i = 0; CPINFO[i].no != -99; ++i){
             if(CPINFO[i].head == 0x0191){
+                //printf("test PACK_UNDO SET\n");
                 CPINFO[i].status = PACK_UNDO; //发认证串及基本配置信息
                 break;
             }
         }
-
+        //printf("[%d] test chkpack_auth RIGHT!\n", getpid());
         return true;
     }
     bool chkpack_fetch (SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, NETPACK* netpack)

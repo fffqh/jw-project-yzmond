@@ -289,7 +289,7 @@ public:
         "本次子进程回收全部完成",
         "本次子进程未回收完成"
         };
-        if(true){
+        if(tostd){
             printf("%s [%u] %s(%d/%d/%d).\n", get_time().c_str(), devid, info[pos], fnum-wnum, fnum, wnum);
         }
         if(tofle){
@@ -351,9 +351,11 @@ public:
         char DateTime[DTSize] = {0};
         time_t fed_nSeconds = GetDateTime(DateTime);
         
+        //printf("[%d] test fst_nSeconds=%ld, fed_nSeconds=%ld\n", getpid(), fst_nSeconds, fed_nSeconds);
+
         if(tostd){
             printf("%s [%u] fork子进程结束[%s]，总数=%d，耗时=%ld秒\n",
-                    get_time().c_str(), devid, DateTime, num, fed_nSeconds-fst_nSeconds);
+                    get_time().c_str(), devid, DateTime, num,(fed_nSeconds-fst_nSeconds));
         }
     
         if(tofle){

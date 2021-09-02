@@ -18,7 +18,7 @@ using namespace std;
 #include "my_socket.h"
 #include "my_getproc.h"
 #include "my_log.h"
-
+#include "my_encrpty.h"
 
 #define _DEBUG_ENV  (_conf_debug/100000)
 #define _DEBUG_ERR  (_conf_debug/10000%2)
@@ -30,8 +30,8 @@ using namespace std;
 
 
 extern MYLOG _mylog;
-extern int  _conf_debug;
-extern int  _conf_isarm;
+extern int32_t  _conf_debug;
+extern int32_t  _conf_isarm;
 
 
 // __HEAD_PACK
@@ -101,7 +101,23 @@ struct SCP_AUTH{
     u_char ety_allow; u_char pad1;   u_short pad2;
     u_char key[32];
     u_int random_num, svr_time;
+    SCP_AUTH(u_short vnomain, u_char vno1, u_char vno2, int32_t conngap, int32_t trangap){
+        vno_main = htons(vnomain);
+        vno_sub1 = vno1;
+        vno_sub2 = vno2;
+
+        dt_fail = htons(conngap);
+        dt_succ = htons(trangap);
+
+        ety_allow = 1;
+
+        memcpy(key, "yzmond:id*str&to!tongji@by#Auth^", 32);
+        encrypt(key, random_num, svr_time);
+        random_num = htonl(random_num);
+        svr_time = htonl(svr_time);
+    }
 };
+
 
 struct CSP_AUTH{
     u_short cpuMHz; u_short MTotal;

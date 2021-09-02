@@ -2,7 +2,6 @@
 版本 1.0
 加入资源控制，向 80 分进发
 */
-
 #include <iostream>
 #include <unistd.h>
 #include <stdio.h>
@@ -54,17 +53,21 @@ using namespace std;
 
 //配置参数（文件取得）
 char _conf_ip[16] = "192.168.1.242";//
-int  _conf_port   = 41746;//
-bool _conf_quit   = 1;
-int  _conf_mindn  = 5;//
-int  _conf_maxdn  = 28;//
-int  _conf_minsn  = 3;//
-int  _conf_maxsn  = 10;//
-bool _conf_newlog = 1;//
-int  _conf_debug  = 111111;//..
-int  _conf_dprint = 1;//
-int  _conf_isarm  = 0;//
-int  _conf_isforkprint = 0;//
+int32_t  _conf_port   = 41746;//
+int32_t  _conf_quit   = 1;
+int32_t  _conf_mindn  = 5;//
+int32_t  _conf_maxdn  = 28;//
+int32_t  _conf_minsn  = 3;//
+int32_t  _conf_maxsn  = 10;//
+int32_t  _conf_newlog = 1;//
+int32_t  _conf_debug  = 111111;//..
+int32_t  _conf_dprint = 1;//
+#ifdef __ARM_ARCH
+int32_t  _conf_isarm  = 1;//
+#else
+int32_t  _conf_isarm  = 0;//
+#endif
+int32_t  _conf_isforkprint = 10000;//
 
 //运行参数（命令行取得）
 int  _devid;
@@ -76,12 +79,11 @@ u_int _sum_scr = 0;
 //记录 fork 时长
 time_t fst_nSeconds;
 time_t fed_nSeconds;
-//记录fork情况
+//记录 fork 情况
 unsigned long _subproc_forknum;
 unsigned long _subproc_waitnum;
 //日志类
 MYLOG _mylog(LOG_PATH, getpid());
-
 
 /******** 参数与配置 ********/
 //chk_arg: 检查调用参数
@@ -101,65 +103,23 @@ bool read_conf()
 {
     //所有可能存在的配置信息
     CONF_ITEM conf_item[] = {
-        {CFITEM_NONE, "服务器IP地址", ""},
-        {CFITEM_NONE, "端口号", ""},
-        {CFITEM_NONE, "进程接收成功后退出", ""},
-        {CFITEM_NONE, "最小配置终端数量", ""},
-        {CFITEM_NONE, "最大配置终端数量", ""},
-        {CFITEM_NONE, "每个终端最小虚屏数量", ""},
-        {CFITEM_NONE, "每个终端最大虚屏数量", ""},
-        {CFITEM_NONE, "删除日志文件", ""},
-        {CFITEM_NONE, "DEBUG设置", ""},
-        {CFITEM_NONE, "DEBUG屏幕显示", ""},
-        {CFITEM_NONE, "是否为ARM", ""},
-        {CFITEM_NONE, "是否打印fork情况",""},
-        {CFITEM_NONE, NULL, ""}
+        {CFITEM_NONE, "服务器IP地址"        , (void*) _conf_ip          ,  0,      0, CFTYPE_STR  ,""},
+        {CFITEM_NONE, "端口号"              , (void*)&_conf_port        ,  0,  65535, CFTYPE_INT32,""},
+        {CFITEM_NONE, "进程接收成功后退出"  , (void*)&_conf_quit        ,  0,      1, CFTYPE_INT32,""},
+        {CFITEM_NONE, "最小配置终端数量"    , (void*)&_conf_mindn       ,  3,     10, CFTYPE_INT32,""},
+        {CFITEM_NONE, "最大配置终端数量"    , (void*)&_conf_maxdn       , 10,     50, CFTYPE_INT32,""},
+        {CFITEM_NONE, "每个终端最小虚屏数量", (void*)&_conf_minsn       ,  1,      3, CFTYPE_INT32,""},
+        {CFITEM_NONE, "每个终端最大虚屏数量", (void*)&_conf_maxsn       ,  4,     16, CFTYPE_INT32,""},
+        {CFITEM_NONE, "删除日志文件"        , (void*)&_conf_newlog      ,  0,      1, CFTYPE_INT32,""},
+        {CFITEM_NONE, "DEBUG设置"           , (void*)&_conf_debug       ,  0, 111111, CFTYPE_INT32,""},
+        {CFITEM_NONE, "DEBUG屏幕显示"       , (void*)&_conf_dprint      ,  0,      1, CFTYPE_INT32,""},
+        {CFITEM_NONE, "是否打印fork情况"    , (void*)&_conf_isforkprint ,  0, 500000, CFTYPE_INT32,""},
+        {CFITEM_NONE, NULL                  , (void*) NULL              ,  0,      0, CFTYPE_STR  ,""}
     };
     CONFINFO conf_info(CONF_PATH, " \t", "#", conf_item);
-    conf_info.getall();
-    //开始格式化全局配置参数
-    for(int i = 0; conf_item[i].name != NULL; ++i){
-        if(conf_item[i].status == CFITEM_NONE){
-            printf("[%d] test read_conf err: can't find [%s]\n", getpid(), conf_item[i].name);
-            continue;
-        }
-        if(!strcmp(conf_item[i].name,"服务器IP地址")){
-            memcpy(_conf_ip,conf_item[i].data.c_str(),sizeof(_conf_ip));
-        }else if(!strcmp(conf_item[i].name,"端口号")){
-            _conf_port = atoi(conf_item[i].data.c_str());
-        }else if(!strcmp(conf_item[i].name,"进程接收成功后退出")){
-            //printf("[%u] !!!test quit_name = %s\n", getpid(), conf_item[i].name);
-            //printf("[%u] !!!test quit_state = %d\n", getpid(), conf_item[i].status);
-            //printf("[%u] !!!test quit_str = %s\n", getpid(), conf_item[i].data.c_str());
-            _conf_quit = !!atoi(conf_item[i].data.c_str());
-        }else if(!strcmp(conf_item[i].name,"最小配置终端数量")){
-            _conf_mindn = atoi(conf_item[i].data.c_str());
-            if(_conf_mindn < 3 || _conf_mindn > 10)
-                _conf_mindn = 6;
-        }else if(!strcmp(conf_item[i].name,"最大配置终端数量")){
-            _conf_maxdn = atoi(conf_item[i].data.c_str());
-            if(_conf_maxdn < 10 || _conf_maxdn > 50)
-                _conf_maxdn = 28;
-        }else if(!strcmp(conf_item[i].name,"每个终端最小虚屏数量")){
-            _conf_minsn = atoi(conf_item[i].data.c_str());
-            if(_conf_minsn < 1 || _conf_minsn > 3)
-                _conf_minsn = 3;
-        }else if(!strcmp(conf_item[i].name,"每个终端最大虚屏数量")){
-            _conf_maxsn = atoi(conf_item[i].data.c_str());
-            if(_conf_maxsn < 4 || _conf_maxsn > 16)
-                _conf_maxsn = 10;
-        }else if(!strcmp(conf_item[i].name,"删除日志文件")){
-            _conf_newlog = !!atoi(conf_item[i].data.c_str());
-        }else if(!strcmp(conf_item[i].name,"DEBUG设置")){
-            _conf_debug = atoi(conf_item[i].data.c_str());
-        }else if(!strcmp(conf_item[i].name,"DEBUG屏幕显示")){
-            _conf_dprint= atoi(conf_item[i].data.c_str());
-        }else if(!strcmp(conf_item[i].name, "是否为ARM")){
-            _conf_isarm = atoi(conf_item[i].data.c_str());
-        }else if(!strcmp(conf_item[i].name, "是否打印fork情况")){
-            _conf_isforkprint = atoi(conf_item[i].data.c_str());
-        }
-    }
+    printf("[%u] 取得的配置参数共%d项\n", getpid(), conf_info.getall());
+    printf("[%u] 取得的有效参数共%d项\n", getpid(), conf_info.chkvar());
+    
     return true;
 }
 //print_conf: 打印配置参数
@@ -338,7 +298,7 @@ bool connect_with_limit(int sockfd, int maxc)
     return true;
 }
 
-/******** 拆解包主接口 ********/
+/******** 封拆包主接口 ********/
 void pack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, CLT_PACK_ACTION* PA)
 {
     //printf("[%d] （pack检查前）当前sendbuf大小: %d\n", getpid(), sinfo->sendbuf_len);
@@ -411,7 +371,6 @@ void unpack(SOCK_INFO* sinfo, SEVPACK* SPINFO, CLTPACK* CPINFO, CLT_PACK_ACTION*
     return; //不可能的成功
 }
 
-
 /******** 资源控制 ********/
 bool watch()
 {
@@ -424,8 +383,7 @@ bool watch()
         if( _subproc_forknum - _subproc_waitnum < 200)
             break;
         sleep(1);
-        printf("等待中... 当前 fork=%lu wait=%lu \n", _subproc_forknum, _subproc_waitnum);
-    
+        //printf("等待中... 当前 fork=%lu wait=%lu \n", _subproc_forknum, _subproc_waitnum);
     }
     return true;
 }
@@ -440,7 +398,7 @@ int sub(u_int devid)
     {2  ,3 , &CLT_PACK_ACTION::chkpack_fetch , 0x0211, "取系统信息",      PACK_EMPTY},
     {3  ,4 , &CLT_PACK_ACTION::chkpack_fetch , 0x0311, "取配置信息",      PACK_EMPTY},
     {4  ,5 , &CLT_PACK_ACTION::chkpack_fetch , 0x0411, "取进程信息",      PACK_EMPTY},
-    {5  ,6 , &CLT_PACK_ACTION::chkpack_fetch  , 0x0511, "取以太口信息",    PACK_EMPTY},
+    {5  ,6 , &CLT_PACK_ACTION::chkpack_fetch , 0x0511, "取以太口信息",    PACK_EMPTY},
     {6  ,7 , &CLT_PACK_ACTION::chkpack_fetch , 0x0711, "取USB口信息",     PACK_EMPTY},
     {7  ,8 , &CLT_PACK_ACTION::chkpack_fetch , 0x0c11, "取U盘上文件列表信息", PACK_EMPTY},
     {8  ,9 , &CLT_PACK_ACTION::chkpack_fetch , 0x0811, "取打印口信息",    PACK_EMPTY},
@@ -484,6 +442,7 @@ int sub(u_int devid)
     }
     char buf[64] = {0};
     sprintf(buf,"Connected(%s:%d) OK.", _conf_ip, _conf_port);
+    //printf("[%d] 连接Server成功，sock_fd=%d\n", getpid(), sinfo.sockfd);
     if(_DEBUG_ENV)
         _mylog.str_tolog(buf);
 
@@ -495,9 +454,9 @@ int sub(u_int devid)
     int sel;
     int len;
     struct timeval timeout;
-    while(1){
+    while(1){   
         //设置超时时间
-        timeout.tv_sec  = 10;
+        timeout.tv_sec  = 20;
         timeout.tv_usec = 0;
         //清空FDSET
         FD_ZERO(&rfd_set);
@@ -559,9 +518,21 @@ int sub(u_int devid)
         }
         if(sel == 0){
             printf("[%u] select 超时返回(rfd=%d wfd=%d)(devid=%u)\n", getpid(), test_rfd, test_wfd, devid);
+            if(!create_socket(sinfo.sockfd, 1)){//创建socket，第2个参数代表是否非阻塞
+                exit(1);
+            }
+            if(!connect_with_limit(sinfo.sockfd, 5)){//连接Server
+                close(sinfo.sockfd);
+                exit(5);
+            }
+            printf("[%u] 重新连接 Server 成功！devid=%d\n", getpid(), devid);
+            char buf[64] = {0};
+            sprintf(buf,"Connected(%s:%d) OK.", _conf_ip, _conf_port);
+            if(_DEBUG_ENV)
+                _mylog.str_tolog(buf);        
         }
         //超时，继续
-        pack(&sinfo, SERVER_PACK_INFO, CLIENT_PACK_INFO,&CLTPA);
+        pack(&sinfo, SERVER_PACK_INFO, CLIENT_PACK_INFO, &CLTPA);
     }
     close(sinfo.sockfd);
     exit(0);//exitcode;
@@ -595,11 +566,11 @@ int main(int argc, char** argv)
         _subproc_forknum = 0;
       
         //log: 系统资源 & fork子进程开始！
-        if(!_DEBUG_ENV) _mylog.set_fle(0);
+        if(!_DEBUG_ENV)         _mylog.set_fle(0);
         if( _conf_isforkprint ) _mylog.set_std(1);
         _mylog.sif_tolog();
         fst_nSeconds = _mylog.fst_tolog();
-        if(!_DEBUG_ENV) _mylog.set_fle(1);
+        if(!_DEBUG_ENV)         _mylog.set_fle(1);
         if( _conf_isforkprint ) _mylog.set_std(_conf_dprint);
         
         //分裂 devnum 个子进程
@@ -653,7 +624,4 @@ int main(int argc, char** argv)
     }
     return 0;
 }
-
-
-
 

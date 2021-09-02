@@ -292,9 +292,12 @@ void encrypt(u_char* key, u_int & random_num, u_int & svr_time)
 	}
 }
 
-bool decrypt_client_auth()
+void decrypt_client_auth(u_char* content, u_int random_num)
 {
-	return true;
+	int pos = random_num % 4093;
+	for(int i = 0; i < 104; ++i, pos%=4093){
+		content[i] = content[i] ^ secret[pos++];
+	}
 }
 void encrypt_client_auth(u_char* content, u_int & random_num)
 {

@@ -7,10 +7,10 @@
 #define SEND_BUFSIZE    8200
 
 typedef struct{
-    int sockfd;
-    u_int devid;
-    int recvbuf_len;
-    int sendbuf_len;
+    int    sockfd;
+    u_int  devid;
+    int    recvbuf_len;
+    int    sendbuf_len;
     u_char recvbuf[RECV_BUFSIZE];
     u_char sendbuf[SEND_BUFSIZE];
 

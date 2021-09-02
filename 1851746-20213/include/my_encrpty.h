@@ -13,6 +13,6 @@ bool decrypt(u_char* key, u_int random_num, u_int & svr_time);
 void encrypt(u_char* key, u_int & random_num, u_int & svr_time);
 
 void encrypt_client_auth(u_char* content, u_int & random_num);
-
+void decrypt_client_auth(u_char* content, u_int random_num);
 
 #endif

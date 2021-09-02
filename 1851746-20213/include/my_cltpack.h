@@ -24,16 +24,16 @@
 #define USBF_DAT_PATH "./usbfiles.dat"
 
 extern char _conf_ip[16];
-extern int  _conf_port  ;
-extern bool _conf_quit  ;
-extern int  _conf_mindn ;
-extern int  _conf_maxdn ;
-extern int  _conf_minsn ;
-extern int  _conf_maxsn ;
-extern bool _conf_newlog;
-extern int  _conf_debug ;
-extern int  _conf_dprint;
-extern int  _conf_isarm;
+extern int32_t _conf_port  ;
+extern int32_t _conf_quit  ;
+extern int32_t _conf_mindn ;
+extern int32_t _conf_maxdn ;
+extern int32_t _conf_minsn ;
+extern int32_t _conf_maxsn ;
+extern int32_t _conf_newlog;
+extern int32_t _conf_debug ;
+extern int32_t _conf_dprint;
+extern int32_t _conf_isarm;
 
 extern int  _devid;
 extern int  _devnum;
